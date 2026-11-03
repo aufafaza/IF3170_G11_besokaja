@@ -11,7 +11,15 @@ authors = [
     { name = "Ahmad Zaky Robbani", email = "" }
 ]
 requires-python = ">=3.10"
-dependencies = []
+dependencies = [
+    "jupyter>=1.1.1",
+    "kagglehub>=1.0.2",
+    "matplotlib>=3.10.9",
+    "networkx>=3.4.2",
+    "numpy>=2.2.6",
+    "pandas>=2.3.3",
+    "scikit-learn>=1.7.2",
+]
 
 [project.scripts]
 ml-lib = "ml_lib:main"
@@ -19,3 +27,9 @@ ml-lib = "ml_lib:main"
 [build-system]
 requires = ["uv_build>=0.13.7,<0.14.0"]
 build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+    "ruff>=0.17.3",
+]
