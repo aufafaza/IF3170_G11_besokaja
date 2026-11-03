@@ -1,0 +1,21 @@
+[project]
+name = "ml-lib"
+version = "1.0"
+description = "IF3170 Project II: Supervised learning library from scratch: KNN, DTL, Regression, SVM, and Bayesian Network, along with a Kaggle Submission."
+readme = "README.md"
+authors = [
+    { name = "Aufa Rienaldifaza Ahmad", email = "aufa.rienaldifaza.a@gmail.com" },
+    { name = "Muhammad Akmal", email = "muhammad.akmal.3806@gmail.com" },
+    { name = "Hakam Avicena Mustain", email = "hakaammustain@gmail.com" },
+    { name = "Muhammad Fakhry Zaki", email = "mfakhry.zaki@gmail.com" },
+    { name = "Ahmad Zaky Robbani", email = "" }
+]
+requires-python = ">=3.10"
+dependencies = []
+
+[project.scripts]
+ml-lib = "ml_lib:main"
+
+[build-system]
+requires = ["uv_build>=0.13.7,<0.14.0"]
+build-backend = "uv_build"
