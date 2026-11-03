@@ -1,7 +1,14 @@
 from __future__ import division 
 import numpy as np 
 
-def euclidean_distance(x1, x2): 
+def minkowski_distance(A, B, p):
     ''' 
-    Returns the euclidean distance of x1 and x2 
+    p is the degree of distance used, i.e. 
+    p = 1:  manhattan distance
+    p = 2:euclidean distance 
+    p -> inf: chebyshev distance  
+    Returns the minkowski distance of x1 and x2 
     '''
+    return np.power(np.sum(np.abs(np.array(A) - np.array(B)) ** p), 1/p)
+
+
