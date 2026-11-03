@@ -1,4 +1,4 @@
-from utils.operation import minkowski_distance
+from supervised_learning.utils.operation import minkowski_distance
 import numpy as np 
 
 class KNN():
