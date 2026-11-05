@@ -49,5 +49,6 @@ class BaseModel(ABC):
   def fit(self, X, y) -> BaseModel:
     pass
 
+  @abstractmethod
   def predict(self, X) -> np.ndarray:
     pass
