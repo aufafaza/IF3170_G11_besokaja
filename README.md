@@ -28,11 +28,7 @@ source .venv/bin/activate
 python -m pip install -e .
 ```
 
-3. Jalankan program
-```sh
-python -m ml_lib.main
-
-```
+3. Buka Notebook, lalu jalankan pada virtual environment yang sudah dibuat.
 
 ## Penjelasan 
 
