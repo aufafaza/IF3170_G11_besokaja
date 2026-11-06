@@ -1,8 +1,12 @@
-import numpy as np 
-import math 
-from supervised_learning.utils.functions import Sigmoid 
+import math
 
-class Regression(object): 
+import numpy as np
+
+from ml_lib.model.base import BaseModel
+from ml_lib.utils.functions import Sigmoid
+
+
+class Regression(BaseModel): 
     def __init__(self, learning_rate=.1, gradient_descent=True): 
         self.param = None 
         self.learning_rate = learning_rate
@@ -18,12 +22,12 @@ class Regression(object):
         # create the param matrix 
         self.param = np.random.uniform(-limit, limit, (n_features,)) 
 
-    def fit(self, X, y, n_iterations): 
+    def fit(self, X, y): 
         self._init_params(X) 
-        for i in range(n_iterations):               
+        for i in range(self.get_params().get("n_iteration")):               
             if (self.gradient_descent): 
-                return None 
-        return None 
+                return 
+        return 
 
 
 

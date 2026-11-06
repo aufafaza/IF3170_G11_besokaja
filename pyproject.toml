@@ -1,26 +1,35 @@
 [project]
-name = "supervised-learning"
-version = "0.1.0"
-description = "Add your description here"
+name = "ml-lib"
+version = "1.0"
+description = "IF3170 Project II: Supervised learning library from scratch: KNN, DTL, Regression, SVM, and Bayesian Network, along with a Kaggle Submission."
 readme = "README.md"
 authors = [
-    { name = "fazabobi", email = "aufa.rienaldifaza.a@gmail.com" }
+    { name = "Aufa Rienaldifaza Ahmad", email = "aufa.rienaldifaza.a@gmail.com" },
+    { name = "Muhammad Akmal", email = "muhammad.akmal.3806@gmail.com" },
+    { name = "Hakam Avicena Mustain", email = "hakaammustain@gmail.com" },
+    { name = "Muhammad Fakhry Zaki", email = "mfakhry.zaki@gmail.com" },
+    { name = "Ahmad Zaky Robbani", email = "" }
 ]
-requires-python = ">=3.14"
+requires-python = ">=3.10"
 dependencies = [
-    "matplotlib>=3.11.2",
-    "numpy>=2.5.4",
-    "pandas>=3.1.0",
+    "jupyter>=1.1.1",
+    "kagglehub>=1.0.2",
+    "matplotlib>=3.10.9",
+    "networkx>=3.4.2",
+    "numpy>=2.2.6",
+    "pandas>=2.3.3",
+    "scikit-learn>=1.7.2",
 ]
 
+[project.scripts]
+ml-lib = "ml_lib:main"
+
 [build-system]
-requires = ["uv_build>=0.13.6,<0.14.0"]
+requires = ["uv_build>=0.13.7,<0.14.0"]
 build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
-    "ipykernel>=7.4.0",
-    "pyright>=1.1.414",
     "pytest>=9.2.0",
-    "scikit-learn>=1.9.1",
+    "ruff>=0.17.3",
 ]
