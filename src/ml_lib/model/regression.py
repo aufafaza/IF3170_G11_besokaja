@@ -6,29 +6,84 @@ from ml_lib.model.base import BaseModel
 from ml_lib.utils.functions import Sigmoid
 
 
-class Regression(BaseModel): 
-    def __init__(self, learning_rate=.1, gradient_descent=True): 
-        self.param = None 
-        self.learning_rate = learning_rate
-        self.gradient_descent = gradient_descent
-        self.sigmoid = Sigmoid() 
+class l1(): 
+    def __init__(self, alpha): 
+        self.alpha = alpha 
+    def __call__(self, w): 
+        return self.alpha * np.linalg.norm(w) 
 
-    def _init_params(self, X): 
-        # create feature matrix 
-        n_features = np.shape(X)[1]  # 1 is column 
-        # limit the feature squeezed by the sigmoid function to sqrt(n) 
-        limit = 1 / math.sqrt(n_features) 
+    def grad(self, w): 
+        return self.alpha * np.sign(w) 
 
-        # create the param matrix 
-        self.param = np.random.uniform(-limit, limit, (n_features,)) 
+class l2(): 
+    def __init__(self, alpha): 
+        self.alpha = alpha 
 
-    def fit(self, X, y): 
-        self._init_params(X) 
-        for i in range(self.get_params().get("n_iteration")):               
-            if (self.gradient_descent): 
-                return 
-        return 
+    def __call__(self, w): 
+        return self.alpha * 0.5 * np.linalg.norm(w) 
+
+    def grad(self, w): 
+        return self.alpha * w 
+
+class elastic_net(): 
+    def __init__(self, alpha, l1_ratio=0.5): 
+        self.alpha = alpha 
+        self.l1_ratio = l1_ratio 
+
+    def ___call__(self, w): 
+        l1_c = self.l1_ratio * np.sign(w) 
+        l2_c = (1 - self.l1_ratio) * w 
+
+        return self.alpha * (l1_c + l2_c) 
+
+class LogisticRegression(BaseModel): 
+    def __init__(self, learning_rate = 0.001, n_iters=1000): 
+        self.lr = learning_rate 
+        self.n_iterations = n_iters 
+        self.weights = None 
+        self.bias = None 
+        self.losses = [] 
+        self.sigmoid = Sigmoid()
+   
+    def compute_loss(self, y, y_pred): 
+        epsilon = 1e-9 
+        y1 = y * np.log(y_pred + epsilon) 
+        y2 = (1-y) * np.log(1 - y_pred + epsilon) 
+        return -np.mean(y1 + y2)
+
+    def feed_forward(self, X): 
+        z = (X @ self.weights) + self.bias 
+        A = self.sigmoid(z) 
+
+        return A 
 
 
+    def fit(self, X, y) -> BaseModel: 
+        n_samples, n_features = X.shape 
 
+        self.weights = np.zeros(n_features) 
+
+        self.bias = 0 
+
+        for _ in range(self.n_iterations): 
+            A = self.feed_forward(X) 
+            self.losses.append(self.compute_loss(y, A))
+            dz = A - y 
+            
+            # gradients 
+            dw = (1 / n_samples) * np.dot(X.T, dz) 
+            db = (1 / n_samples) * np.sum(dz) 
+
+            self.weights -= self.lr * dw 
+            self.bias -= self.lr * db 
+
+        return self 
+
+
+    def predict(self, X): 
+        threshold = 0.5 
+        y_hat = (X @ self.weights) + self.bias 
+        y_predicted = self.sigmoid(y_hat) 
+        y_predicted_cls = [1 if i > threshold else 0 for i in y_predicted]  
+        return np.array(y_predicted_cls) 
 
