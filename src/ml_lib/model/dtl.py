@@ -1,6 +1,5 @@
 from __future__ import division, print_function 
 from collections import Counter 
-from ml_lib.utils.data import divide_on_feature
 import numpy as np 
 
 class TreeNode(): 
@@ -9,7 +8,7 @@ class TreeNode():
         self.threshold = threshold 
         self.left = left 
         self.right = right 
-        self.value = None 
+        self.value = value 
 
     def is_leaf_node(self): 
         return self.value is not None 
@@ -39,7 +38,7 @@ class DecisionTree():
         # find the best split (gain) 
         feat_indices = np.random.choice(n_feats, self.n_features, replace=False) 
 
-        best_thresh_, best_feature = self._best_split(X, y, feat_indices) 
+        best_feature, best_thresh_ = self._best_split(X, y, feat_indices) 
         # create child nodes 
         left_idxs, right_idxs = self._split(X[:, best_feature], best_thresh_)
         left = self._grow_tree(X[left_idxs, :], y[left_idxs], depth+1)
@@ -52,7 +51,7 @@ class DecisionTree():
 
         split_idx, split_threshold = None, None  
 
-        for feat_i, in feat_indices: 
+        for feat_i in feat_indices: 
             X_col = X[:, feat_i] 
             thresholds = np.unique(X_col) 
 
@@ -108,5 +107,19 @@ class DecisionTree():
         # calculate gain 
         counter = Counter(y) 
         value = counter.most_common(1)[0][0] 
-        return value 
+        return value
+
+    def predict(self, X): 
+        return np.array([self._traverse_tree(x, self.root) for x in X]) 
+
+    def _traverse_tree(self, x, node): 
+        if node.is_leaf_node(): 
+            return node.value
+        
+        if x[node.feature] <= node.threshold: 
+            return self._traverse_tree(x, node.left) 
+
+        return self._traverse_tree(x, node.right) 
+
+
     

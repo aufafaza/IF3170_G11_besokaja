@@ -1,16 +1,14 @@
-"""Re-export class. Make sure the naming is up to date."""
+"""Re-export the available model classes."""
 
-from .bayes_net import BayesianNetwork
-from .dtl import DTL
+from .dtl import DecisionTree
 from .knn import KNN
-from .regression import LinearRegression, LogisticRegression
-from .svm import SVM
+from .regression import LogisticRegression
+
+DTL = DecisionTree
 
 __all__ = [
     "DTL",
+    "DecisionTree",
     "KNN",
-    "SVM",
-    "BayesianNetwork",
-    "LinearRegression",
     "LogisticRegression",
 ]
