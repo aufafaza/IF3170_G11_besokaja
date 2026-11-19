@@ -1,6 +1,10 @@
-from __future__ import division, print_function 
+from __future__ import annotations
+
 from collections import Counter 
 import numpy as np 
+from sklearn.base import ClassifierMixin
+
+from ml_lib.model.base import BaseModel
 
 class TreeNode(): 
     def __init__(self, feature=None, threshold=None, left=None, right=None,*,value=None): 
@@ -14,17 +18,23 @@ class TreeNode():
         return self.value is not None 
 
 
-class DecisionTree(): 
+class DecisionTree(ClassifierMixin, BaseModel):
     def __init__(self, min_samples_split=2, max_depth=100, n_features=None): 
         self.min_samples_split = min_samples_split 
         self.max_depth = max_depth
         self.n_features = n_features 
+        self._n_features = None
         self.root=None 
 
-    def fit(self, X, y): 
-        self.n_features = X.shape[1] if not self.n_features else min(X.shape[1], self.n_features) 
+    def fit(self, X, y) -> DecisionTree:
+        X = np.asarray(X)
+        y = np.asarray(y)
+        self._n_features = X.shape[1] if not self.n_features else min(X.shape[1], self.n_features)
         
         self.root = self._grow_tree(X, y) 
+        self.classes_ = np.unique(y)
+        self.n_features_in_ = X.shape[1]
+        return self
 
     def _grow_tree(self, X, y, depth=0): 
         n_samples, n_feats = X.shape 
@@ -36,9 +46,12 @@ class DecisionTree():
             return TreeNode(value=leaf_value)
 
         # find the best split (gain) 
-        feat_indices = np.random.choice(n_feats, self.n_features, replace=False) 
+        feat_indices = np.random.choice(n_feats, self._n_features, replace=False)
 
         best_feature, best_thresh_ = self._best_split(X, y, feat_indices) 
+        if best_feature is None:
+            return TreeNode(value=self._most_common_label(y))
+
         # create child nodes 
         left_idxs, right_idxs = self._split(X[:, best_feature], best_thresh_)
         left = self._grow_tree(X[left_idxs, :], y[left_idxs], depth+1)
@@ -53,7 +66,7 @@ class DecisionTree():
 
         for feat_i in feat_indices: 
             X_col = X[:, feat_i] 
-            thresholds = np.unique(X_col) 
+            thresholds = np.unique(X_col)[:-1]
 
             for thr in thresholds: 
                 # information gain 
@@ -95,9 +108,7 @@ class DecisionTree():
         return left_idxs, right_idxs 
     def _entropy(self, y): 
         # -sum(p(X).base2log(p(X)) 
-        hist = np.bincount(y) 
-        # note: 
-        # bincount returns the occurences of each values in an np.array 
+        _, hist = np.unique(y, return_counts=True)
         p_s = hist / len(y) 
         
         return -np.sum([p * np.log(p) for p in p_s if p > 0])
@@ -109,7 +120,11 @@ class DecisionTree():
         value = counter.most_common(1)[0][0] 
         return value
 
-    def predict(self, X): 
+    def predict(self, X) -> np.ndarray:
+        if self.root is None:
+            raise RuntimeError("DecisionTree must be fitted before calling predict")
+
+        X = np.asarray(X)
         return np.array([self._traverse_tree(x, self.root) for x in X]) 
 
     def _traverse_tree(self, x, node): 

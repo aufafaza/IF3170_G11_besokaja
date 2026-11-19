@@ -4,9 +4,10 @@ import inspect
 from abc import ABC, abstractmethod
 
 import numpy as np
+from sklearn.base import BaseEstimator
 
 
-class BaseModel(ABC):
+class BaseModel(BaseEstimator, ABC):
   # Bisa ditambahi lagi, but basically common interface/base class buat per algortimanya
 
   @classmethod
