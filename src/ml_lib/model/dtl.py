@@ -168,7 +168,6 @@ class DecisionTreeC45(DecisionTree):
 
 
 class DecisionTreeCART(DecisionTree):
-
     def __init__(self, min_samples_split=2, max_depth=100, n_features=None, regression=False): 
         self.min_samples_split = min_samples_split 
         self.max_depth = max_depth
@@ -178,7 +177,7 @@ class DecisionTreeCART(DecisionTree):
         self.regression=regression 
 
     def _calculate_gain(self, y, col, thr): 
-        parent_gini = self._gini_impurity(y) 
+        parent_gini = self._mse(y) if self.regression else self._gini_impurity(y) 
 
         left_idxs, right_idxs = self._split(col, thr) 
         if len(left_idxs) == 0 or len(right_idxs) == 0: 
@@ -186,7 +185,7 @@ class DecisionTreeCART(DecisionTree):
 
         n = len(y) 
         n_l, n_r = len(left_idxs), len(right_idxs) 
-        g_l, g_r = self._gini_impurity(y[left_idxs]), self._gini_impurity(y[right_idxs])
+        g_l, g_r = self._mse(y[left_idxs]) if self.regression else self._gini_impurity(y[left_idxs]), self._mse(y[right_idxs]) if self.regression else self._gini_impurity(y[right_idxs])
         
         child_gini = (n_l / n) * g_l + (n_r / n) * g_r 
 
@@ -199,4 +198,8 @@ class DecisionTreeCART(DecisionTree):
         gini_impurity = 1 - np.sum(squared_probabilities) 
 
         return gini_impurity  
-     
+    
+    def _mse(self, y): 
+        mse = np.mean((y - y.mean()) ** 2) 
+
+        return mse  
