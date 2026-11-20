@@ -165,3 +165,38 @@ class DecisionTreeC45(DecisionTree):
             return information_gain
         else: 
             return 0
+
+
+class DecisionTreeCART(DecisionTree):
+
+    def __init__(self, min_samples_split=2, max_depth=100, n_features=None, regression=False): 
+        self.min_samples_split = min_samples_split 
+        self.max_depth = max_depth
+        self.n_features = n_features 
+        self._n_features = None
+        self.root=None 
+        self.regression=regression 
+
+    def _calculate_gain(self, y, col, thr): 
+        parent_gini = self._gini_impurity(y) 
+
+        left_idxs, right_idxs = self._split(col, thr) 
+        if len(left_idxs) == 0 or len(right_idxs) == 0: 
+            return 0 
+
+        n = len(y) 
+        n_l, n_r = len(left_idxs), len(right_idxs) 
+        g_l, g_r = self._gini_impurity(y[left_idxs]), self._gini_impurity(y[right_idxs])
+        
+        child_gini = (n_l / n) * g_l + (n_r / n) * g_r 
+
+        return parent_gini - child_gini 
+
+    def _gini_impurity(self, y): 
+        _, counts_classes = np.unique(y, return_counts=True) 
+        squared_probabilities = np.square(counts_classes / y.size) 
+
+        gini_impurity = 1 - np.sum(squared_probabilities) 
+
+        return gini_impurity  
+     
