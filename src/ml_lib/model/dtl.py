@@ -137,4 +137,69 @@ class DecisionTree(ClassifierMixin, BaseModel):
         return self._traverse_tree(x, node.right) 
 
 
+class DecisionTreeC45(DecisionTree):
+    def _calculate_gain(self, y, col, thr): 
+        # entropy(parent) - [weighted_avg].E(children)
+        # instead of using just gain, use normalized gain  
+        # parent entropy 
+        parent_entropy = self._entropy(y) 
+
+        # create children 
+        left_idxs, right_idxs = self._split(col, thr)
+        if len(left_idxs) == 0 or len(right_idxs) == 0: 
+            return 0 
+
+        # calculate weighted entropy children 
+        n = len(y) 
+        n_l, n_r = len(left_idxs), len(right_idxs) 
+        e_l, e_r = self._entropy(y[left_idxs]), self._entropy(y[right_idxs])
+        
+        child_splitinfo = (n_l / n) * e_l + (n_r / n) * e_r 
+
+        # calculate information gain 
+        information_gain = parent_entropy - child_splitinfo
+        
+
+        # calculate SplitInfo 
+        if information_gain > 0 or information_gain < 0: 
+            return information_gain
+        else: 
+            return 0
+
+
+class DecisionTreeCART(DecisionTree):
+    def __init__(self, min_samples_split=2, max_depth=100, n_features=None, regression=False): 
+        self.min_samples_split = min_samples_split 
+        self.max_depth = max_depth
+        self.n_features = n_features 
+        self._n_features = None
+        self.root=None 
+        self.regression=regression 
+
+    def _calculate_gain(self, y, col, thr): 
+        parent_gini = self._mse(y) if self.regression else self._gini_impurity(y) 
+
+        left_idxs, right_idxs = self._split(col, thr) 
+        if len(left_idxs) == 0 or len(right_idxs) == 0: 
+            return 0 
+
+        n = len(y) 
+        n_l, n_r = len(left_idxs), len(right_idxs) 
+        g_l, g_r = self._mse(y[left_idxs]) if self.regression else self._gini_impurity(y[left_idxs]), self._mse(y[right_idxs]) if self.regression else self._gini_impurity(y[right_idxs])
+        
+        child_gini = (n_l / n) * g_l + (n_r / n) * g_r 
+
+        return parent_gini - child_gini 
+
+    def _gini_impurity(self, y): 
+        _, counts_classes = np.unique(y, return_counts=True) 
+        squared_probabilities = np.square(counts_classes / y.size) 
+
+        gini_impurity = 1 - np.sum(squared_probabilities) 
+
+        return gini_impurity  
     
+    def _mse(self, y): 
+        mse = np.mean((y - y.mean()) ** 2) 
+
+        return mse  

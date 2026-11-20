@@ -4,14 +4,19 @@ from sklearn.base import clone, is_classifier
 from sklearn.model_selection import GridSearchCV
 
 from ml_lib.model.base import BaseModel
-from ml_lib.model.dtl import DecisionTree
+from ml_lib.model.dtl import DecisionTree, DecisionTreeC45
+
+
+@pytest.fixture(params=[DecisionTree, DecisionTreeC45])
+def tree_class(request):
+    return request.param
 
 
 @pytest.mark.parametrize("n_features", [None, 1, 5])
-def test_fit_preserves_constructor_parameters(n_features):
+def test_fit_preserves_constructor_parameters(tree_class, n_features):
     X = [[0], [0], [1], [1]]
     y = [0, 0, 1, 1]
-    model = DecisionTree(n_features=n_features)
+    model = tree_class(n_features=n_features)
     params = model.get_params()
 
     assert isinstance(model, BaseModel)
@@ -26,8 +31,8 @@ def test_fit_preserves_constructor_parameters(n_features):
     assert copied.root is None
 
 
-def test_refit_recomputes_default_feature_count():
-    model = DecisionTree()
+def test_refit_recomputes_default_feature_count(tree_class):
+    model = tree_class()
     model.fit([[0], [1]], [0, 1])
     model.fit([[0, 0], [1, 1]], [0, 1])
 
@@ -36,15 +41,15 @@ def test_refit_recomputes_default_feature_count():
     np.testing.assert_array_equal(model.predict([[0, 0], [1, 1]]), [0, 1])
 
 
-def test_predict_requires_fit():
+def test_predict_requires_fit(tree_class):
     with pytest.raises(RuntimeError, match="must be fitted"):
-        DecisionTree().predict([[0]])
+        tree_class().predict([[0]])
 
 
-def test_parameter_search():
+def test_parameter_search(tree_class):
     X = np.array([[0], [1]] * 6)
     y = np.array([0, 1] * 6)
-    model = DecisionTree()
+    model = tree_class()
     assert model.set_params(min_samples_split=2) is model
     with pytest.raises(ValueError, match="Invalid parameter"):
         model.set_params(unknown_parameter=1)
@@ -58,33 +63,33 @@ def test_parameter_search():
     np.testing.assert_array_equal(search.predict(X), y)
 
 
-def test_constant_features_predict_majority_label():
+def test_constant_features_predict_majority_label(tree_class):
     X = [[1], [1], [1]]
-    model = DecisionTree().fit(X, [0, 1, 1])
+    model = tree_class().fit(X, [0, 1, 1])
 
     np.testing.assert_array_equal(model.predict(X), [1, 1, 1])
 
 
 @pytest.mark.parametrize("labels", [[0.0, 1.0, 1.0], ["no", "yes", "yes"], [-1, 1, 1]])
-def test_class_label_types(labels):
+def test_class_label_types(tree_class, labels):
     X = [[0], [1], [2]]
-    model = DecisionTree().fit(X, labels)
+    model = tree_class().fit(X, labels)
 
     np.testing.assert_array_equal(model.predict(X), labels)
 
 
-def test_zero_gain_split_can_learn_xor():
+def test_zero_gain_split_can_learn_xor(tree_class):
     X = [[0, 0], [0, 1], [1, 0], [1, 1]]
     y = [0, 1, 1, 0]
-    model = DecisionTree().fit(X, y)
+    model = tree_class().fit(X, y)
 
     np.testing.assert_array_equal(model.predict(X), y)
 
 
-def test_classifier_supports_default_parameter_search_scoring():
+def test_classifier_supports_default_parameter_search_scoring(tree_class):
     X = np.array([[0], [1]] * 6)
     y = np.array([0, 1] * 6)
-    model = DecisionTree()
+    model = tree_class()
     assert is_classifier(model)
 
     search = GridSearchCV(model, {"max_depth": [1, 2]}, cv=2, error_score="raise")
