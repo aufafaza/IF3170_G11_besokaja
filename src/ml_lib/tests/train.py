@@ -1,20 +1,25 @@
 from sklearn import datasets 
 from sklearn.model_selection import train_test_split 
+from sklearn.preprocessing import StandardScaler
 import numpy as np 
-from ml_lib.model.dtl import DecisionTree, DecisionTreeC45, DecisionTreeCART
-
+from ml_lib.model.svm import SVM
 data = datasets.load_breast_cancer() 
-X, y = data.data, data.target 
+X, y = data.data, 2 * data.target - 1
 
 X_train, X_test, y_train, y_test = train_test_split(
     X, y, test_size=0.2, random_state=42) 
 
-dtl = DecisionTreeCART(min_samples_split= 2, max_depth= 100, regression=True)
+scaler = StandardScaler()
+X_train = scaler.fit_transform(X_train)
+X_test = scaler.transform(X_test)
 
-dtl.fit(X_train, y_train) 
-predictions = dtl.predict(X_test) 
+svm = SVM(n_features=X_train.shape[1])
+
+svm.fit(X_train, y_train)
+predictions = svm.predict(X_test)
 
 def accuracy(y_test, y_pred): 
     return np.sum(y_test == y_pred) / len(y_test) 
 
+svm.plot_history()
 print(accuracy(y_test, predictions))
