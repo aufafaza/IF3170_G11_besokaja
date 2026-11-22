@@ -2,17 +2,24 @@ from __future__ import annotations
 
 from collections import Counter 
 import numpy as np 
-from sklearn.base import ClassifierMixin
+from sklearn.base import ClassifierMixin, RegressorMixin
+from sklearn.utils import RegressorTags
 
 from ml_lib.model.base import BaseModel
 
 class TreeNode(): 
-    def __init__(self, feature=None, threshold=None, left=None, right=None,*,value=None): 
+    def __init__(
+        self, feature=None, threshold=None, left=None, right=None,
+        *, value=None, n_samples=0, impurity=0.0, leaf_value=None
+        ):        
         self.feature=feature 
         self.threshold = threshold 
         self.left = left 
         self.right = right 
         self.value = value 
+        self.n_samples = n_samples
+        self.impurity = impurity
+        self.leaf_value = leaf_value
 
     def is_leaf_node(self): 
         return self.value is not None 
@@ -39,26 +46,33 @@ class DecisionTree(ClassifierMixin, BaseModel):
     def _grow_tree(self, X, y, depth=0): 
         n_samples, n_feats = X.shape 
         n_labels = len(np.unique(y)) 
+        impurity = self._impurity(y)
 
+        leaf_value = self._leaf_value(y)
         # check stopping criteria 
         if (depth >= self.max_depth or n_labels==1 or n_samples < self.min_samples_split): 
-            leaf_value = self._most_common_label(y)
-            return TreeNode(value=leaf_value)
+            leaf_value = self._leaf_value(y)
+            return TreeNode(value=leaf_value, n_samples=n_samples, impurity=impurity, leaf_value=leaf_value)
 
         # find the best split (gain) 
         feat_indices = np.random.choice(n_feats, self._n_features, replace=False)
 
         best_feature, best_thresh_ = self._best_split(X, y, feat_indices) 
         if best_feature is None:
-            return TreeNode(value=self._most_common_label(y))
+            return TreeNode(value=leaf_value, n_samples=n_samples, impurity=impurity, leaf_value=leaf_value)
 
         # create child nodes 
         left_idxs, right_idxs = self._split(X[:, best_feature], best_thresh_)
         left = self._grow_tree(X[left_idxs, :], y[left_idxs], depth+1)
         right = self._grow_tree(X[right_idxs, :], y[right_idxs], depth+1)
 
-        return TreeNode(best_feature, best_thresh_, left, right)
-   
+        return TreeNode(best_feature, best_thresh_, left, right, n_samples=n_samples, leaf_value=leaf_value, impurity=impurity)
+    
+    def _impurity(self, y): 
+        return self._entropy(y) 
+    def _leaf_value(self, y): 
+        return self._most_common_label(y) 
+
     def _best_split(self, X, y, feat_indices): 
         best_gain = -1 
 
@@ -154,27 +168,42 @@ class DecisionTreeC45(DecisionTree):
         n_l, n_r = len(left_idxs), len(right_idxs) 
         e_l, e_r = self._entropy(y[left_idxs]), self._entropy(y[right_idxs])
         
-        child_splitinfo = (n_l / n) * e_l + (n_r / n) * e_r 
+        weighted_child_entropy = (n_l / n) * e_l + (n_r / n) * e_r 
 
         # calculate information gain 
-        information_gain = parent_entropy - child_splitinfo
-        
+        information_gain = parent_entropy - weighted_child_entropy
 
         # calculate SplitInfo 
-        if information_gain > 0 or information_gain < 0: 
-            return information_gain
-        else: 
-            return 0
+        split_info = self._entropy(col <= thr) 
+
+        # gain ratio 
+        if split_info > 0: 
+            return (information_gain / split_info).astype(float) 
+
 
 
 class DecisionTreeCART(DecisionTree):
-    def __init__(self, min_samples_split=2, max_depth=100, n_features=None, regression=False): 
+    def __init__(self, min_samples_split=2, max_depth=100, n_features=None, regression=False, ccp_alpha=0.0): 
         self.min_samples_split = min_samples_split 
         self.max_depth = max_depth
         self.n_features = n_features 
         self._n_features = None
         self.root=None 
         self.regression=regression 
+        self.ccp_alpha = ccp_alpha
+
+    def __sklearn_tags__(self):
+        tags = super().__sklearn_tags__()
+        if self.regression:
+            tags.estimator_type = "regressor"
+            tags.classifier_tags = None
+            tags.regressor_tags = RegressorTags()
+        return tags
+
+    def score(self, X, y, sample_weight=None):
+        if self.regression:
+            return RegressorMixin.score(self, X, y, sample_weight=sample_weight)
+        return ClassifierMixin.score(self, X, y, sample_weight=sample_weight)
 
     def _calculate_gain(self, y, col, thr): 
         parent_gini = self._mse(y) if self.regression else self._gini_impurity(y) 
@@ -199,7 +228,68 @@ class DecisionTreeCART(DecisionTree):
 
         return gini_impurity  
     
+    def _best_split(self, X, y, feat_indices): 
+        features = feat_indices
+        best_feature, best_threshold = None, None 
+
+        best_gain = -np.inf 
+        for feature in features: 
+            column = X[:, feature] 
+            values = np.unique(column).astype(float) 
+            thresholds = values[:-1] + (values[1:] - values[:-1]) / 2 
+            for threshold in thresholds: 
+                gain = self._calculate_gain(y, column, threshold)
+
+                if gain > best_gain: 
+                    best_gain = gain 
+                    best_feature = feature 
+                    best_threshold = threshold 
+        return best_feature, best_threshold 
+
     def _mse(self, y): 
         mse = np.mean((y - y.mean()) ** 2) 
 
-        return mse  
+        return mse 
+
+    def _leaf_value(self, y): 
+        return np.mean(y) if self.regression else super()._leaf_value(y)
+    
+    def _impurity(self, y): 
+        return self._mse(y) if self.regression else self._gini_impurity(y)
+
+    def _prune(self, node, total_samples): 
+        risk = (node.n_samples / total_samples) * node.impurity 
+        collapsed_cost = risk + self.ccp_alpha 
+        
+        if node.is_leaf_node(): 
+            return collapsed_cost 
+
+        kept_cost = ( 
+            self._prune(node.left, total_samples) + self._prune(node.right, total_samples) 
+        )
+
+        if collapsed_cost <= kept_cost: 
+            # prune 
+            node.value = node.leaf_value 
+            node.left = None 
+            node.right = None 
+            node.feature = None
+            node.threshold = None 
+            return collapsed_cost 
+
+        return kept_cost 
+
+    def fit(self, X, y): 
+        if self.ccp_alpha < 0: 
+            raise ValueError("err: alpha <0") 
+
+        super().fit(X, y)
+        if self.regression:
+            del self.classes_
+        assert self.root is not None 
+
+        if self.ccp_alpha > 0:
+            self._prune(self.root, self.root.n_samples)
+
+        return self
+

@@ -97,3 +97,46 @@ def test_classifier_supports_default_parameter_search_scoring(tree_class):
 
     assert search.best_score_ == 1.0
     assert search.score(X, y) == 1.0
+
+
+@pytest.mark.parametrize("regression", [False, True])
+def test_cart_interface_and_pruning(regression):
+    from sklearn.base import is_regressor
+    from sklearn.metrics import accuracy_score, r2_score
+    from ml_lib.model.dtl import DecisionTreeCART
+
+    X = np.arange(12).reshape(-1, 1)
+    y = X[:, 0] * 0.25 if regression else (X[:, 0] >= 6).astype(int)
+    model = DecisionTreeCART(regression=regression, ccp_alpha=100)
+    assert is_regressor(model) == regression
+    assert is_classifier(model) != regression
+    assert clone(model).get_params() == model.get_params()
+    assert model.fit(X, y) is model
+    assert model.root.is_leaf_node()
+    assert hasattr(model, "classes_") != regression
+    metric = r2_score if regression else accuracy_score
+    weights = np.arange(1, 13)
+    assert model.score(X, y, sample_weight=weights) == pytest.approx(
+        metric(y, model.predict(X), sample_weight=weights)
+    )
+    if regression:
+        np.testing.assert_allclose(model.predict(X), np.mean(y))
+
+    search = GridSearchCV(
+        DecisionTreeCART(regression=regression),
+        {"ccp_alpha": [0, 0.01]}, cv=2, error_score="raise",
+    ).fit(X, y)
+    assert np.isfinite(search.best_score_)
+
+
+def test_cart_mode_can_change_between_fits():
+    from sklearn.base import is_regressor
+    from ml_lib.model.dtl import DecisionTreeCART
+
+    model = DecisionTreeCART().fit([[0], [1]], [0, 1])
+    model.set_params(regression=True).fit([[0], [1]], [0.25, 1.25])
+    assert is_regressor(model)
+    assert not hasattr(model, "classes_")
+    model.set_params(regression=False).fit([[0], [1]], [0, 1])
+    assert is_classifier(model)
+    np.testing.assert_array_equal(model.classes_, [0, 1])
