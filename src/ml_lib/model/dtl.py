@@ -7,12 +7,18 @@ from sklearn.base import ClassifierMixin
 from ml_lib.model.base import BaseModel
 
 class TreeNode(): 
-    def __init__(self, feature=None, threshold=None, left=None, right=None,*,value=None): 
+    def __init__(
+        self, feature=None, threshold=None, left=None, right=None,
+        *, value=None, n_samples=0, impurity=0.0, leaf_value=None
+        ):        
         self.feature=feature 
         self.threshold = threshold 
         self.left = left 
         self.right = right 
         self.value = value 
+        self.n_samples = n_samples
+        self.impurity = impurity
+        self.leaf_value = leaf_value
 
     def is_leaf_node(self): 
         return self.value is not None 
@@ -39,26 +45,30 @@ class DecisionTree(ClassifierMixin, BaseModel):
     def _grow_tree(self, X, y, depth=0): 
         n_samples, n_feats = X.shape 
         n_labels = len(np.unique(y)) 
+        impurity = self._impurity(y)
 
+        leaf_value = self._leaf_value(y)
         # check stopping criteria 
         if (depth >= self.max_depth or n_labels==1 or n_samples < self.min_samples_split): 
             leaf_value = self._leaf_value(y)
-            return TreeNode(value=leaf_value)
+            return TreeNode(value=leaf_value, n_samples=n_samples, impurity=impurity, leaf_value=leaf_value)
 
         # find the best split (gain) 
         feat_indices = np.random.choice(n_feats, self._n_features, replace=False)
 
         best_feature, best_thresh_ = self._best_split(X, y, feat_indices) 
         if best_feature is None:
-            return TreeNode(value=self._leaf_value(y))
+            return TreeNode(value=leaf_value, n_samples=n_samples, impurity=impurity, leaf_value=leaf_value)
 
         # create child nodes 
         left_idxs, right_idxs = self._split(X[:, best_feature], best_thresh_)
         left = self._grow_tree(X[left_idxs, :], y[left_idxs], depth+1)
         right = self._grow_tree(X[right_idxs, :], y[right_idxs], depth+1)
 
-        return TreeNode(best_feature, best_thresh_, left, right)
-
+        return TreeNode(best_feature, best_thresh_, left, right, n_samples=n_samples, leaf_value=leaf_value, impurity=impurity)
+    
+    def _impurity(self, y): 
+        return self._entropy(y) 
     def _leaf_value(self, y): 
         return self._most_common_label(y) 
 
@@ -229,3 +239,6 @@ class DecisionTreeCART(DecisionTree):
 
     def _leaf_value(self, y): 
         return np.mean(y) if self.regression else super()._leaf_value(y)
+    
+    def _impurity(self, y): 
+        return self._gini_impurity(y) 
