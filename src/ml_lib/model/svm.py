@@ -2,7 +2,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 # from sklearn.datasets import make_blobs
 import cvxopt
-class LinearSVM():
+
+from ml_lib.model.base import BaseModel
+
+class LinearSVM(BaseModel):
     '''
         This class implements Soft Margin SVM
 
@@ -12,10 +15,10 @@ class LinearSVM():
             equation at lhs of plus sign is the minimization of w
     '''
 
-    def __init__(self, C=1, kernel='linear', degree=3, n_features=2, n_iters=1000, learning_rate=0.001):
+    def __init__(self, C=1, kernel='linear', degree=3, n_iters=1000, learning_rate=0.001):
         # we can seed here
-        self.w = np.random.rand(n_features, )
-        self.b = np.random.rand()
+        self.w = None
+        self.b = None
         self.C = C
         self.kernel = kernel
         self.degree = degree
@@ -24,7 +27,10 @@ class LinearSVM():
         self.history = {}
 
 
-    def predict(self, X):
+    def predict(self, X) -> np.ndarray:
+        if self.w is None or self.b is None:
+            raise RuntimeError("LinearSVM must be fitted before calling predict")
+        X = np.asarray(X, dtype=float)
         m = X.shape[0]
 
         y_preds = np.zeros(m)
@@ -35,13 +41,17 @@ class LinearSVM():
 
         return y_preds
 
-    def fit(self, X, y):
+    def fit(self, X, y) -> BaseModel:
+        X = np.asarray(X, dtype=float)
+        y = np.asarray(y, dtype=float)
+        self.w = np.random.rand(X.shape[1])
+        self.b = np.random.rand()
         self.history, new_w, new_b = self._gradient_descent(X, y, self.w, self.b)
 
         # update to the final w and b
         self.w, self.b = new_w, new_b
 
-        return self.w, self.b
+        return self
 
     def calc_hinge_loss(self, X_i, y_i, w, b):
         return max(0, 1 - y_i * (np.dot(w, X_i) + b))
@@ -155,13 +165,13 @@ class LinearSVM():
         return ax
 
 
-class KernelSVM():
+class KernelSVM(BaseModel):
     '''
     SVM using kernels, i.e. rbf (gaussian) and polynomial
 
     class is seperated due to difference in mathematical computation
     '''
-    def __init__(self, C=1, kernel='rbf', gamma=None, degree=3, n_features=2, n_iters=1000, learning_rate=0.001, coef=None):
+    def __init__(self, C=1, kernel='rbf', gamma=None, degree=3, n_iters=1000, learning_rate=0.001, coef=None):
         # we can seed here
 
         # self.b = np.random.rand()
@@ -178,20 +188,18 @@ class KernelSVM():
         self.support_vector_labels: np.ndarray | None = None
         self.intercept: float | None = None
 
-    def fit(self, X, y):
+    def fit(self, X, y) -> BaseModel:
         X = np.asarray(X, dtype=float)
         y = np.asarray(y, dtype=float)
         # samples and features
         m, n = np.shape(X)
 
-        if self.gamma is None:
-            # use the default gamma
-            self.gamma = 1 / n
+        self.gamma_ = 1 / n if self.gamma is None else self.gamma
 
         # we want to initialize the equation of the kernel
         kernel_function = self._init_kernel(
             degree = self.degree,
-            gamma = self.gamma,
+            gamma = self.gamma_,
             coef = self.coef
         )
 
@@ -273,7 +281,7 @@ class KernelSVM():
         support_vectors = self.support_vectors
         support_vector_labels = self.support_vector_labels
         intercept = self.intercept
-        gamma = self.gamma
+        gamma = getattr(self, "gamma_", None)
         if (
             a is None
             or support_vectors is None
@@ -305,7 +313,7 @@ class KernelSVM():
         if y.shape != scores.shape or not np.all(np.isin(y, [-1, 1])):
             raise ValueError("y must contain one label (-1 or 1) per sample")
 
-        kernel_function = self._init_kernel(self.degree, self.gamma, self.coef)
+        kernel_function = self._init_kernel(self.degree, self.gamma_, self.coef)
 
         vectors = self.support_vectors
 
@@ -317,7 +325,7 @@ class KernelSVM():
 
         return float(margin_cost + (self.C or 0) * np.maximum(0, 1 - y * scores).sum())
 
-    def predict(self, X):
+    def predict(self, X) -> np.ndarray:
         return np.sign(self.decision_function(X))
     
 
