@@ -42,7 +42,7 @@ class DecisionTree(ClassifierMixin, BaseModel):
 
         # check stopping criteria 
         if (depth >= self.max_depth or n_labels==1 or n_samples < self.min_samples_split): 
-            leaf_value = self._most_common_label(y)
+            leaf_value = self._leaf_value(y)
             return TreeNode(value=leaf_value)
 
         # find the best split (gain) 
@@ -50,7 +50,7 @@ class DecisionTree(ClassifierMixin, BaseModel):
 
         best_feature, best_thresh_ = self._best_split(X, y, feat_indices) 
         if best_feature is None:
-            return TreeNode(value=self._most_common_label(y))
+            return TreeNode(value=self._leaf_value(y))
 
         # create child nodes 
         left_idxs, right_idxs = self._split(X[:, best_feature], best_thresh_)
@@ -58,7 +58,10 @@ class DecisionTree(ClassifierMixin, BaseModel):
         right = self._grow_tree(X[right_idxs, :], y[right_idxs], depth+1)
 
         return TreeNode(best_feature, best_thresh_, left, right)
-   
+
+    def _leaf_value(self, y): 
+        return self._most_common_label(y) 
+
     def _best_split(self, X, y, feat_indices): 
         best_gain = -1 
 
@@ -160,13 +163,13 @@ class DecisionTreeC45(DecisionTree):
         information_gain = parent_entropy - weighted_child_entropy
 
         # calculate SplitInfo 
-        split_info = self._entropy(col) 
+        split_info = self._entropy(col <= thr) 
 
         # gain ratio 
-        if split_info == 0: 
+        if split_info > 0: 
+            return (information_gain / split_info).astype(float) 
+        else: 
             return 0.0 
-
-        return information_gain / split_info 
 
 
 class DecisionTreeCART(DecisionTree):
@@ -201,7 +204,28 @@ class DecisionTreeCART(DecisionTree):
 
         return gini_impurity  
     
+    def _best_split(self, X, y, feat_indices): 
+        features = feat_indices
+        best_feature, best_threshold = None, None 
+
+        best_gain = -np.inf 
+        for feature in features: 
+            column = X[:, feature] 
+            values = np.unique(column).astype(float) 
+            thresholds = values[:-1] + (values[1:] - values[:-1]) / 2 
+            for threshold in thresholds: 
+                gain = self._calculate_gain(y, column, threshold)
+
+                if gain > best_gain: 
+                    best_gain = gain 
+                    best_feature = feature 
+                    best_threshold = threshold 
+        return best_feature, best_threshold 
+
     def _mse(self, y): 
         mse = np.mean((y - y.mean()) ** 2) 
 
-        return mse  
+        return mse 
+
+    def _leaf_value(self, y): 
+        return np.mean(y) if self.regression else super()._leaf_value(y)
