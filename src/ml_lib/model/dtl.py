@@ -154,17 +154,19 @@ class DecisionTreeC45(DecisionTree):
         n_l, n_r = len(left_idxs), len(right_idxs) 
         e_l, e_r = self._entropy(y[left_idxs]), self._entropy(y[right_idxs])
         
-        child_splitinfo = (n_l / n) * e_l + (n_r / n) * e_r 
+        weighted_child_entropy = (n_l / n) * e_l + (n_r / n) * e_r 
 
         # calculate information gain 
-        information_gain = parent_entropy - child_splitinfo
-        
+        information_gain = parent_entropy - weighted_child_entropy
 
         # calculate SplitInfo 
-        if information_gain > 0 or information_gain < 0: 
-            return information_gain
-        else: 
-            return 0
+        split_info = self._entropy(col) 
+
+        # gain ratio 
+        if split_info == 0: 
+            return 0.0 
+
+        return information_gain / split_info 
 
 
 class DecisionTreeCART(DecisionTree):
