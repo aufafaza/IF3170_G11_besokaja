@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from collections import Counter 
 import numpy as np 
-from sklearn.base import ClassifierMixin
+from sklearn.base import ClassifierMixin, RegressorMixin
+from sklearn.utils import RegressorTags
 
 from ml_lib.model.base import BaseModel
 
@@ -178,18 +179,31 @@ class DecisionTreeC45(DecisionTree):
         # gain ratio 
         if split_info > 0: 
             return (information_gain / split_info).astype(float) 
-        else: 
-            return 0.0 
+
 
 
 class DecisionTreeCART(DecisionTree):
-    def __init__(self, min_samples_split=2, max_depth=100, n_features=None, regression=False): 
+    def __init__(self, min_samples_split=2, max_depth=100, n_features=None, regression=False, ccp_alpha=0.0): 
         self.min_samples_split = min_samples_split 
         self.max_depth = max_depth
         self.n_features = n_features 
         self._n_features = None
         self.root=None 
         self.regression=regression 
+        self.ccp_alpha = ccp_alpha
+
+    def __sklearn_tags__(self):
+        tags = super().__sklearn_tags__()
+        if self.regression:
+            tags.estimator_type = "regressor"
+            tags.classifier_tags = None
+            tags.regressor_tags = RegressorTags()
+        return tags
+
+    def score(self, X, y, sample_weight=None):
+        if self.regression:
+            return RegressorMixin.score(self, X, y, sample_weight=sample_weight)
+        return ClassifierMixin.score(self, X, y, sample_weight=sample_weight)
 
     def _calculate_gain(self, y, col, thr): 
         parent_gini = self._mse(y) if self.regression else self._gini_impurity(y) 
@@ -241,4 +255,41 @@ class DecisionTreeCART(DecisionTree):
         return np.mean(y) if self.regression else super()._leaf_value(y)
     
     def _impurity(self, y): 
-        return self._gini_impurity(y) 
+        return self._mse(y) if self.regression else self._gini_impurity(y)
+
+    def _prune(self, node, total_samples): 
+        risk = (node.n_samples / total_samples) * node.impurity 
+        collapsed_cost = risk + self.ccp_alpha 
+        
+        if node.is_leaf_node(): 
+            return collapsed_cost 
+
+        kept_cost = ( 
+            self._prune(node.left, total_samples) + self._prune(node.right, total_samples) 
+        )
+
+        if collapsed_cost <= kept_cost: 
+            # prune 
+            node.value = node.leaf_value 
+            node.left = None 
+            node.right = None 
+            node.feature = None
+            node.threshold = None 
+            return collapsed_cost 
+
+        return kept_cost 
+
+    def fit(self, X, y): 
+        if self.ccp_alpha < 0: 
+            raise ValueError("err: alpha <0") 
+
+        super().fit(X, y)
+        if self.regression:
+            del self.classes_
+        assert self.root is not None 
+
+        if self.ccp_alpha > 0:
+            self._prune(self.root, self.root.n_samples)
+
+        return self
+
