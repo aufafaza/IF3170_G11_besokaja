@@ -28,8 +28,8 @@ class KNN(BaseModel):
 
     def _vote(self, neighbors):
         """most common class among its neighbors"""
-        counts = np.bincount(neighbors.astype("int"))
-        return counts.argmax()
+        labels, counts = np.unique(neighbors, return_counts=True)
+        return labels[counts.argmax()]
 
     def predict(self, X) -> np.ndarray:
         """Predict labels for the samples in X."""
@@ -37,7 +37,7 @@ class KNN(BaseModel):
             raise RuntimeError("KNN must be fitted before calling predict")
 
         X = np.asarray(X)
-        y_pred = np.empty(X.shape[0])
+        y_pred = np.empty(X.shape[0], dtype=self._y_train.dtype)
 
         for i, sample in enumerate(X):
             idx = np.argsort(
