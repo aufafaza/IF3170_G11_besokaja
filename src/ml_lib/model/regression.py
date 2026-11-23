@@ -1,3 +1,4 @@
+from abc import ABC, abstractmethod
 from numbers import Integral
 from pathlib import Path
 
@@ -9,19 +10,32 @@ from ml_lib.utils.functions import Sigmoid
 _MAX_EXPONENT = 700.0
 
 
-def _check_alpha(alpha):
-    if alpha < 0:
-        raise ValueError("alpha must be non-negative")
-    return alpha
-
-
 def _soft_threshold(w, threshold):
     return np.sign(w) * np.maximum(np.abs(w) - threshold, 0)
 
 
-class l1:
+class Penalty(ABC):
+    """Regularization term applied to the model weights."""
+
     def __init__(self, alpha):
-        self.alpha = _check_alpha(alpha)
+        if alpha < 0:
+            raise ValueError("alpha must be non-negative")
+        self.alpha = alpha
+
+    @abstractmethod
+    def __call__(self, w):
+        """Return the penalty value at w."""
+
+    @abstractmethod
+    def grad(self, w):
+        """Return a gradient or subgradient at w."""
+
+    @abstractmethod
+    def prox(self, w, step):
+        """Return argmin_u [penalty(u) + ||u - w||^2 / (2 * step)]."""
+
+
+class l1(Penalty):
     def __call__(self, w):
         return self.alpha * np.abs(w).sum()
 
@@ -31,10 +45,8 @@ class l1:
     def prox(self, w, step):
         return _soft_threshold(w, step * self.alpha)
 
-class l2:
-    def __init__(self, alpha):
-        self.alpha = _check_alpha(alpha)
 
+class l2(Penalty):
     def __call__(self, w):
         return 0.5 * self.alpha * np.dot(w, w)
 
@@ -44,11 +56,12 @@ class l2:
     def prox(self, w, step):
         return w / (1 + step * self.alpha)
 
-class elastic_net:
+
+class elastic_net(Penalty):
     def __init__(self, alpha, l1_ratio=0.5):
+        super().__init__(alpha)
         if not 0 <= l1_ratio <= 1:
             raise ValueError("l1_ratio must be between 0 and 1")
-        self.alpha = _check_alpha(alpha)
         self.l1_ratio = l1_ratio
 
     def __call__(self, w):
@@ -65,6 +78,7 @@ class elastic_net:
     def prox(self, w, step):
         thresholded = _soft_threshold(w, step * self.alpha * self.l1_ratio)
         return thresholded / (1 + step * self.alpha * (1 - self.l1_ratio))
+
 
 def save_loss_video(losses, path, *, ylabel="Training log loss"):
     import matplotlib.pyplot as plt
@@ -100,7 +114,7 @@ class LogisticRegression(BaseModel):
     """
     Binary logistic regression trained with proximal gradient descent.
 
-    penalty: None, l1, l2, or elastic_net
+    penalty: None or a Penalty, such as l1, l2, or elastic_net
         applied to the weights only, never to the bias
     tol: float or None
         stop when the objective changes by at most tol, None runs all n_iters
@@ -123,6 +137,8 @@ class LogisticRegression(BaseModel):
             raise ValueError("n_iters must be a positive integer")
         if self.tol is not None and self.tol < 0:
             raise ValueError("tol must be non-negative or None")
+        if self.penalty is not None and not isinstance(self.penalty, Penalty):
+            raise TypeError("penalty must be None or a Penalty instance")
 
     def decision_function(self, X):
         if self.weights is None or self.bias is None:
@@ -201,9 +217,7 @@ class LogisticRegression(BaseModel):
         step = weights - self.learning_rate * gradient
         if self.penalty is None:
             return step
-        if hasattr(self.penalty, "prox"):
-            return self.penalty.prox(step, self.learning_rate)
-        return step - self.learning_rate * self.penalty.grad(weights)
+        return self.penalty.prox(step, self.learning_rate)
 
     def save_loss_video(self, path):
         """Export this fitted model's loss history as an MP4."""

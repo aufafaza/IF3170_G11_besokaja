@@ -9,7 +9,7 @@ from sklearn.linear_model import LogisticRegression as SklearnLogisticRegression
 from sklearn.model_selection import GridSearchCV
 from sklearn.preprocessing import StandardScaler
 
-from ml_lib.model.regression import LogisticRegression, elastic_net, l1, l2
+from ml_lib.model.regression import LogisticRegression, Penalty, elastic_net, l1, l2
 from ml_lib.utils.functions import Sigmoid
 
 PENALTIES = [
@@ -205,18 +205,47 @@ def test_tol_stops_early_and_default_runs_all_iterations(cancer):
     assert len(early.losses) == early.n_iter_ + 1
 
 
-def test_custom_penalty_without_prox_uses_gradient():
-    class GradientOnlyL2:
+@pytest.mark.parametrize("make_penalty", PENALTIES)
+def test_builtin_penalties_share_base_class(make_penalty):
+    assert isinstance(make_penalty(), Penalty)
+
+
+def test_custom_penalty_subclass_is_accepted():
+    class CustomL2(Penalty):
         def __call__(self, w):
-            return 0.05 * np.dot(w, w)
+            return 0.5 * self.alpha * np.dot(w, w)
 
         def grad(self, w):
-            return 0.1 * w
+            return self.alpha * w
+
+        def prox(self, w, step):
+            return w / (1 + step * self.alpha)
 
     X, y = make_classification(80, 3, n_redundant=0, random_state=4)
-    model = LogisticRegression(learning_rate=0.1, n_iters=100, penalty=GradientOnlyL2()).fit(X, y)
+    custom = LogisticRegression(learning_rate=0.1, n_iters=100, penalty=CustomL2(0.1)).fit(X, y)
+    builtin = LogisticRegression(learning_rate=0.1, n_iters=100, penalty=l2(0.1)).fit(X, y)
 
-    assert np.isfinite(model.weights).all()
+    np.testing.assert_allclose(custom.weights, builtin.weights)
+
+
+def test_penalty_contract_is_enforced():
+    class MissingProx(Penalty):
+        def __call__(self, w):
+            return 0.0
+
+        def grad(self, w):
+            return np.zeros_like(w)
+
+    with pytest.raises(TypeError):
+        Penalty(0.1)
+    with pytest.raises(TypeError):
+        MissingProx(0.1)
+
+
+@pytest.mark.parametrize("penalty", ["l2", object(), lambda w: 0.0])
+def test_non_penalty_objects_are_rejected(penalty):
+    with pytest.raises(TypeError, match="Penalty"):
+        LogisticRegression(penalty=penalty).fit([[0.0], [1.0]], [0, 1])
 
 
 def test_refit_resets_history(cancer):
