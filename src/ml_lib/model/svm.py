@@ -1,9 +1,9 @@
-import numpy as np
-import matplotlib.pyplot as plt
-# from sklearn.datasets import make_blobs
 import cvxopt
+import matplotlib.pyplot as plt
+import numpy as np
 
 from ml_lib.model.base import BaseModel
+
 
 class LinearSVM(BaseModel):
     '''
