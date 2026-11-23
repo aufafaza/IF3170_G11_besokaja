@@ -171,7 +171,8 @@ class KernelSVM(BaseModel):
 
     class is seperated due to difference in mathematical computation
     '''
-    def __init__(self, C=1, kernel='rbf', gamma=None, degree=3, n_iters=1000, learning_rate=0.001, coef=None):
+    def __init__(self, C=1, kernel='rbf', gamma=None, degree=3, n_iters=1000,
+                 learning_rate=0.001, coef=None, max_samples=3000, random_state=None):
         # we can seed here
 
         # self.b = np.random.rand()
@@ -182,15 +183,39 @@ class KernelSVM(BaseModel):
         self.learning_rate = learning_rate
         self.gamma = gamma
         self.coef = coef
+        # max_samples: the QP solver below is O(m^3) in the number of training
+        # rows -- with the full ~20k-row training fold this would never
+        # realistically finish. Above this many rows, a stratified subsample
+        # is used to fit instead. Set to None to disable (full data, at your
+        # own risk) if you ever fit on a small enough subset already.
+        self.max_samples = max_samples
+        self.random_state = random_state
         # self.history = {}
         self.a: np.ndarray | None = None
         self.support_vectors: np.ndarray | None = None
         self.support_vector_labels: np.ndarray | None = None
         self.intercept: float | None = None
 
+    def _stratified_subsample(self, X, y, max_samples):
+        rng = np.random.default_rng(self.random_state)
+        classes, counts = np.unique(y, return_counts=True)
+        keep_idx = []
+        for cls, count in zip(classes, counts):
+            cls_idx = np.flatnonzero(y == cls)
+            n_keep = max(1, int(round(max_samples * count / len(y))))
+            n_keep = min(n_keep, count)
+            keep_idx.extend(rng.choice(cls_idx, n_keep, replace=False))
+        keep_idx = np.array(keep_idx)
+        rng.shuffle(keep_idx)
+        return X[keep_idx], y[keep_idx]
+
     def fit(self, X, y) -> BaseModel:
         X = np.asarray(X, dtype=float)
         y = np.asarray(y, dtype=float)
+
+        if self.max_samples is not None and X.shape[0] > self.max_samples:
+            X, y = self._stratified_subsample(X, y, self.max_samples)
+
         # samples and features
         m, n = np.shape(X)
 
@@ -203,11 +228,9 @@ class KernelSVM(BaseModel):
             coef = self.coef
         )
 
-        # create the kernel matrix
-        kernel_matrix = np.zeros((m, m))
-        for i in range(m):
-            for j in range(m):
-                kernel_matrix[i, j] = kernel_function(X[i], X[j])
+        # Vectorized kernel matrix via broadcasting, instead of a Python
+        # double loop calling kernel_function(X[i], X[j]) m*m times.
+        kernel_matrix = kernel_function(X[:, None, :], X[None, :, :])
 
         # quadratic optimization
         P, q, A, b, G, h = self._init_quadratic_matrix(y, m, kernel_matrix)
@@ -362,20 +385,3 @@ class KernelSVM(BaseModel):
         if show:
             plt.show()
         return ax
-
-
-#
-# if __name__ == "__main__":
-#     X, y = make_blobs(
-#         n_samples=100, centers=2, cluster_std=3.5, random_state=42
-#     )
-#     y = y * 2 - 1
-#     # print(X.shape)
-#     # print(y.shape)
-#     # print(X[:10])
-#     # print(y[:10])
-#     svm = KernelSVM(kernel='rbf') 
-#     svm.fit(X, y)
-#     svm.predict(X)
-#     svm.svm_plot(X, y)
-
