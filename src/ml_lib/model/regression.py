@@ -1,3 +1,4 @@
+from numbers import Integral
 from pathlib import Path
 
 import numpy as np
@@ -5,30 +6,50 @@ import numpy as np
 from ml_lib.model.base import BaseModel
 from ml_lib.utils.functions import Sigmoid
 
+_MAX_EXPONENT = 700.0
 
-class l1: 
-    def __init__(self, alpha): 
-        self.alpha = alpha 
-    def __call__(self, w): 
+
+def _check_alpha(alpha):
+    if alpha < 0:
+        raise ValueError("alpha must be non-negative")
+    return alpha
+
+
+def _soft_threshold(w, threshold):
+    return np.sign(w) * np.maximum(np.abs(w) - threshold, 0)
+
+
+class l1:
+    def __init__(self, alpha):
+        self.alpha = _check_alpha(alpha)
+    def __call__(self, w):
         return self.alpha * np.abs(w).sum()
 
-    def grad(self, w): 
+    def grad(self, w):
         return self.alpha * np.sign(w)
 
-class l2: 
-    def __init__(self, alpha): 
-        self.alpha = alpha 
+    def prox(self, w, step):
+        return _soft_threshold(w, step * self.alpha)
 
-    def __call__(self, w): 
+class l2:
+    def __init__(self, alpha):
+        self.alpha = _check_alpha(alpha)
+
+    def __call__(self, w):
         return 0.5 * self.alpha * np.dot(w, w)
 
-    def grad(self, w): 
-        return self.alpha * w 
+    def grad(self, w):
+        return self.alpha * w
 
-class elastic_net: 
-    def __init__(self, alpha, l1_ratio=0.5): 
-        self.alpha = alpha 
-        self.l1_ratio = l1_ratio 
+    def prox(self, w, step):
+        return w / (1 + step * self.alpha)
+
+class elastic_net:
+    def __init__(self, alpha, l1_ratio=0.5):
+        if not 0 <= l1_ratio <= 1:
+            raise ValueError("l1_ratio must be between 0 and 1")
+        self.alpha = _check_alpha(alpha)
+        self.l1_ratio = l1_ratio
 
     def __call__(self, w):
         absolute = np.abs(w).sum()
@@ -36,10 +57,14 @@ class elastic_net:
         return self.alpha * (self.l1_ratio * absolute + (1 - self.l1_ratio) * squared)
 
     def grad(self, w):
-        l1_c = self.l1_ratio * np.sign(w) 
-        l2_c = (1 - self.l1_ratio) * w 
+        l1_c = self.l1_ratio * np.sign(w)
+        l2_c = (1 - self.l1_ratio) * w
 
-        return self.alpha * (l1_c + l2_c) 
+        return self.alpha * (l1_c + l2_c)
+
+    def prox(self, w, step):
+        thresholded = _soft_threshold(w, step * self.alpha * self.l1_ratio)
+        return thresholded / (1 + step * self.alpha * (1 - self.l1_ratio))
 
 def save_loss_video(losses, path, *, ylabel="Training log loss"):
     import matplotlib.pyplot as plt
@@ -71,66 +96,122 @@ def save_loss_video(losses, path, *, ylabel="Training log loss"):
     return path
 
 
-class LogisticRegression(BaseModel): 
-    def __init__(self, learning_rate=0.001, n_iters=1000, penalty=None):
+class LogisticRegression(BaseModel):
+    """
+    Binary logistic regression trained with proximal gradient descent.
+
+    penalty: None, l1, l2, or elastic_net
+        applied to the weights only, never to the bias
+    tol: float or None
+        stop when the objective changes by at most tol, None runs all n_iters
+    """
+
+    def __init__(self, learning_rate=0.001, n_iters=1000, penalty=None, tol=None):
         self.penalty = penalty
-        self.learning_rate = learning_rate 
-        self.n_iters = n_iters 
-        self.weights = None 
-        self.bias = None 
-        self.losses = [] 
-        self.sigmoid = Sigmoid()
-   
-    def compute_loss(self, y, y_pred): 
-        epsilon = 1e-9 
-        y1 = y * np.log(y_pred + epsilon) 
-        y2 = (1-y) * np.log(1 - y_pred + epsilon) 
-        return -np.mean(y1 + y2)
-
-    def feed_forward(self, X): 
-        z = (X @ self.weights) + self.bias 
-        A = self.sigmoid(z) 
-
-        return A 
-
-
-    def fit(self, X, y) -> BaseModel: 
-        n_samples, n_features = X.shape 
-
-        self.weights = np.zeros(n_features) 
-
-        self.bias = 0
+        self.learning_rate = learning_rate
+        self.n_iters = n_iters
+        self.tol = tol
+        self.weights = None
+        self.bias = None
         self.losses = []
+        self.sigmoid = Sigmoid()
 
-        for _ in range(self.n_iters): 
-            A = self.feed_forward(X) 
-            loss = self.compute_loss(y, A)
-            dz = A - y 
-            
-            # gradients 
-            dw = (1 / n_samples) * np.dot(X.T, dz) 
-            db = (1 / n_samples) * np.sum(dz) 
+    def _validate_hyperparameters(self):
+        if self.learning_rate <= 0:
+            raise ValueError("learning_rate must be positive")
+        if not isinstance(self.n_iters, Integral) or self.n_iters < 1:
+            raise ValueError("n_iters must be a positive integer")
+        if self.tol is not None and self.tol < 0:
+            raise ValueError("tol must be non-negative or None")
 
+    def decision_function(self, X):
+        if self.weights is None or self.bias is None:
+            raise RuntimeError("LogisticRegression must be fitted before calling predict")
+
+        X = np.asarray(X, dtype=float)
+        if X.ndim != 2 or X.shape[1] != self.weights.size:
+            raise ValueError(f"X must have shape (n_samples, {self.weights.size}), got {X.shape}")
+        if not np.isfinite(X).all():
+            raise ValueError("X contains NaN or infinity. Please impute missing values first")
+        return (X @ self.weights) + self.bias
+
+    def feed_forward(self, X):
+        return self.sigmoid(self.decision_function(X))
+
+    def fit(self, X, y) -> BaseModel:
+        self._validate_hyperparameters()
+        X, target = self._prepare_training_data(X, y)
+        n_samples, n_features = X.shape
+        signs = 2.0 * target - 1.0
+
+        weights = np.zeros(n_features)
+        bias = 0.0
+        self.losses = []
+        self.n_iter_ = 0
+
+        for _ in range(self.n_iters):
+            # log loss is log(1 + exp(-sign * score))
+            # one exp serves loss and gradient
+            exponent = -signs * (X @ weights + bias)
+            odds = np.exp(np.minimum(exponent, _MAX_EXPONENT))
+            loss = float((np.log1p(odds) + np.maximum(exponent - _MAX_EXPONENT, 0)).mean())
             if self.penalty is not None:
-                loss += self.penalty(self.weights)
-                dw += self.penalty.grad(self.weights)
+                loss += float(self.penalty(weights))
+
+            if self.tol is not None and self.losses and abs(self.losses[-1] - loss) <= self.tol:
+                self.losses.append(loss)
+                break
             self.losses.append(loss)
 
-            self.weights -= self.learning_rate * dw 
-            self.bias -= self.learning_rate * db 
+            # gradients
+            residual = -signs * odds / (1 + odds)  # sigmoid(score) - target
+            dw = (X.T @ residual) / n_samples
+            db = residual.mean()
 
-        return self 
+            weights = self._update_weights(weights, dw)
+            bias -= self.learning_rate * db
+            self.n_iter_ += 1
 
+        self.weights = weights
+        self.bias = bias
+        return self
+
+    def _prepare_training_data(self, X, y):
+        X = np.asarray(X, dtype=float)
+        y = np.asarray(y)
+        if y.ndim == 2 and y.shape[1] == 1:
+            y = y.ravel()
+        if X.ndim != 2:
+            raise ValueError(f"X must be 2D, got shape {X.shape}")
+        if y.ndim != 1:
+            raise ValueError("LogisticRegression supports one binary target")
+        if X.shape[0] != y.size:
+            raise ValueError(f"X and y have inconsistent lengths: {X.shape[0]} != {y.size}")
+        if not np.isfinite(X).all():
+            raise ValueError("X contains NaN or infinity. Please impute missing values first")
+
+        self.classes_, encoded = np.unique(y, return_inverse=True)
+        if self.classes_.size != 2:
+            raise ValueError(
+                f"LogisticRegression requires exactly 2 classes, got {self.classes_.size}"
+            )
+        return X, encoded.ravel().astype(float)
+
+    def _update_weights(self, weights, gradient):
+        step = weights - self.learning_rate * gradient
+        if self.penalty is None:
+            return step
+        if hasattr(self.penalty, "prox"):
+            return self.penalty.prox(step, self.learning_rate)
+        return step - self.learning_rate * self.penalty.grad(weights)
 
     def save_loss_video(self, path):
         """Export this fitted model's loss history as an MP4."""
         label = "Training log loss" if self.penalty is None else "Log loss + regularization penalty"
         return save_loss_video(self.losses, path, ylabel=label)
 
-    def predict(self, X): 
-        threshold = 0.5 
-        y_hat = (X @ self.weights) + self.bias 
-        y_predicted = self.sigmoid(y_hat) 
-        y_predicted_cls = [1 if i > threshold else 0 for i in y_predicted]  
-        return np.array(y_predicted_cls) 
+    def predict(self, X):
+        # sigmoid(score) > 0.5 is the same as score > 0
+        scores = self.decision_function(X)
+        return self.classes_[(scores > 0).astype(int)]
 
