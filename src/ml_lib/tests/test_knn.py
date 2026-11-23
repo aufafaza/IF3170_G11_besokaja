@@ -7,6 +7,7 @@ from sklearn.model_selection import GridSearchCV
 from sklearn.neighbors import KNeighborsClassifier
 
 from ml_lib.model.knn import _BATCH_SIZE, KNN
+from ml_lib.utils.functions import minkowski_distance
 
 
 @pytest.fixture
@@ -196,6 +197,11 @@ def test_predict_requires_fit():
         KNN().predict([[0.0]])
     with pytest.raises(RuntimeError, match="must be fitted"):
         next(KNN().neighbor_labels([[0.0]]))
+
+
+@pytest.mark.parametrize(("p", "expected"), [(1, 7.0), (2, 5.0), (np.inf, 4.0)])
+def test_minkowski_distance_helper(p, expected):
+    assert minkowski_distance([0, 0], [3, 4], p) == pytest.approx(expected)
 
 
 def test_clone_and_grid_search(data):
