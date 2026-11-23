@@ -35,10 +35,11 @@ class KNN(BaseModel):
         """Predict labels for the samples in X."""
         if self._X_train is None or self._y_train is None:
             raise RuntimeError("KNN must be fitted before calling predict")
-
+        if self.k <= 0: 
+            raise ValueError("k must be > 0") 
         X = np.asarray(X)
         y_pred = np.empty(X.shape[0], dtype=self._y_train.dtype)
-        
+                
         for i, sample in enumerate(X): 
             distances = [] 
             for x in self._X_train: 
