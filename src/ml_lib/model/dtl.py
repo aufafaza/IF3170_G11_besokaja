@@ -1,14 +1,16 @@
 from __future__ import annotations
 
-from collections import Counter 
-import numpy as np 
+from collections import Counter
+
+import matplotlib.pyplot as plt
+import numpy as np
 from sklearn.base import ClassifierMixin, RegressorMixin
 from sklearn.utils import RegressorTags
-import matplotlib.pyplot as plt
 
 from ml_lib.model.base import BaseModel
 
-class TreeNode(): 
+
+class TreeNode: 
     def __init__(
         self, feature=None, threshold=None, left=None, right=None,
         *, value=None, n_samples=0, impurity=0.0, leaf_value=None
@@ -170,7 +172,7 @@ class DecisionTree(ClassifierMixin, BaseModel):
                 else:
                     label += "\n(children hidden)"
             ax.text(x, -depth, f"{branch}{label}\nn = {node.n_samples}",
-                    ha="center", va="center", bbox=dict(boxstyle="round", facecolor="white"))
+                    ha="center", va="center", bbox={"boxstyle": "round", "facecolor": "white"})
 
         draw(self.root, 0.5, 0, 1)
         ax.set_xlim(0, 1)

@@ -6,7 +6,6 @@ from sklearn.preprocessing import StandardScaler
 
 from ml_lib.model.regression import LogisticRegression, elastic_net
 
-
 if __name__ == "__main__":
     X, y = load_breast_cancer(return_X_y=True)
     X_train, _, y_train, _ = train_test_split(X, y, test_size=0.2, random_state=42)

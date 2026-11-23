@@ -6,7 +6,7 @@ from ml_lib.model.base import BaseModel
 from ml_lib.utils.functions import Sigmoid
 
 
-class l1(): 
+class l1: 
     def __init__(self, alpha): 
         self.alpha = alpha 
     def __call__(self, w): 
@@ -15,7 +15,7 @@ class l1():
     def grad(self, w): 
         return self.alpha * np.sign(w)
 
-class l2(): 
+class l2: 
     def __init__(self, alpha): 
         self.alpha = alpha 
 
@@ -25,7 +25,7 @@ class l2():
     def grad(self, w): 
         return self.alpha * w 
 
-class elastic_net(): 
+class elastic_net: 
     def __init__(self, alpha, l1_ratio=0.5): 
         self.alpha = alpha 
         self.l1_ratio = l1_ratio 
