@@ -38,12 +38,19 @@ class KNN(BaseModel):
 
         X = np.asarray(X)
         y_pred = np.empty(X.shape[0], dtype=self._y_train.dtype)
-
-        for i, sample in enumerate(X):
-            idx = np.argsort(
-                [minkowski_distance(sample, x, self.p) for x in self._X_train]
-            )[:self.k]
-            neighbors = self._y_train[idx]
-            y_pred[i] = self._vote(neighbors)
-
+        
+        for i, sample in enumerate(X): 
+            distances = [] 
+            for x in self._X_train: 
+                distances.append(minkowski_distance(sample, x, self.p))
+            idx = np.argpartition(distances, self.k - 1)[:self.k]
+            neighbors = self._y_train[idx] 
+            y_pred[i] = self._vote(neighbors) 
+        # for i, sample in enumerate(X):
+        #     idx = np.argsort(
+        #         [minkowski_distance(sample, x, self.p) for x in self._X_train]
+        #     )[:self.k]
+        #     neighbors = self._y_train[idx]
+        #     y_pred[i] = self._vote(neighbors)
+        #
         return y_pred
