@@ -4,6 +4,7 @@ from collections import Counter
 import numpy as np 
 from sklearn.base import ClassifierMixin, RegressorMixin
 from sklearn.utils import RegressorTags
+import matplotlib.pyplot as plt
 
 from ml_lib.model.base import BaseModel
 
@@ -140,6 +141,42 @@ class DecisionTree(ClassifierMixin, BaseModel):
 
         X = np.asarray(X)
         return np.array([self._traverse_tree(x, self.root) for x in X]) 
+
+    def visualize(self, feature_names=None, max_depth=3, ax=None):
+        if self.root is None:
+            raise RuntimeError("DecisionTree must be fitted before calling visualize")
+        if max_depth is not None and max_depth < 0:
+            raise ValueError("max_depth must be nonnegative or None")
+        if feature_names is not None:
+            feature_names = list(feature_names)
+            if len(feature_names) != self.n_features_in_:
+                raise ValueError("Provide one feature name per training column")
+
+
+        if ax is None:
+            _, ax = plt.subplots(figsize=(14, 6))
+
+        def draw(node, x, depth, width, branch=""):
+            if node.is_leaf_node():
+                label = f"predict {node.value}"
+            else:
+                name = feature_names[node.feature] if feature_names is not None else f"X[{node.feature}]"
+                label = f"{name} ≤ {node.threshold}"
+                if max_depth is None or depth < max_depth:
+                    for child, direction, answer in ((node.left, -1, "Yes"), (node.right, 1, "No")):
+                        child_x = x + direction * width / 4
+                        ax.plot([x, child_x], [-depth, -depth - 1], color="gray", zorder=1)
+                        draw(child, child_x, depth + 1, width / 2, answer + "\n")
+                else:
+                    label += "\n(children hidden)"
+            ax.text(x, -depth, f"{branch}{label}\nn = {node.n_samples}",
+                    ha="center", va="center", bbox=dict(boxstyle="round", facecolor="white"))
+
+        draw(self.root, 0.5, 0, 1)
+        ax.set_xlim(0, 1)
+        ax.margins(y=0.15)
+        ax.set_axis_off()
+        return ax
 
     def _traverse_tree(self, x, node): 
         if node.is_leaf_node(): 

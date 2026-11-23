@@ -1,4 +1,4 @@
-import math
+from pathlib import Path
 
 import numpy as np
 
@@ -10,17 +10,17 @@ class l1():
     def __init__(self, alpha): 
         self.alpha = alpha 
     def __call__(self, w): 
-        return self.alpha * np.linalg.norm(w) 
+        return self.alpha * np.abs(w).sum()
 
     def grad(self, w): 
-        return self.alpha * np.sign(w) 
+        return self.alpha * np.sign(w)
 
 class l2(): 
     def __init__(self, alpha): 
         self.alpha = alpha 
 
     def __call__(self, w): 
-        return self.alpha * 0.5 * np.linalg.norm(w) 
+        return 0.5 * self.alpha * np.dot(w, w)
 
     def grad(self, w): 
         return self.alpha * w 
@@ -30,14 +30,50 @@ class elastic_net():
         self.alpha = alpha 
         self.l1_ratio = l1_ratio 
 
-    def ___call__(self, w): 
+    def __call__(self, w):
+        absolute = np.abs(w).sum()
+        squared = 0.5 * np.dot(w, w)
+        return self.alpha * (self.l1_ratio * absolute + (1 - self.l1_ratio) * squared)
+
+    def grad(self, w):
         l1_c = self.l1_ratio * np.sign(w) 
         l2_c = (1 - self.l1_ratio) * w 
 
         return self.alpha * (l1_c + l2_c) 
 
+def save_loss_video(losses, path, *, ylabel="Training log loss"):
+    import matplotlib.pyplot as plt
+    from matplotlib.animation import FFMpegWriter, FuncAnimation
+
+    if len(losses) == 0:
+        raise ValueError("Fit the model first")
+
+    path = Path(path)
+    steps = np.arange(len(losses))
+    fig, ax = plt.subplots(figsize=(8, 4.5))
+    line, = ax.plot(steps, losses, marker=".", markevery=[-1])
+    ax.set(xlabel="Gradient updates completed", ylabel=ylabel,
+           title="Logistic regression training")
+    fig.tight_layout()
+
+    def update(end):
+        line.set_data(steps[:end], losses[:end])
+        return (line,)
+
+    frames = np.linspace(1, len(losses), min(150, len(losses)), dtype=int)
+    animation = FuncAnimation(fig, update, frames=frames, repeat=False)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        animation.save(path, writer=FFMpegWriter(fps=25, codec="libx264",
+                                                 extra_args=["-pix_fmt", "yuv420p"]))
+    finally:
+        plt.close(fig)
+    return path
+
+
 class LogisticRegression(BaseModel): 
-    def __init__(self, learning_rate = 0.001, n_iters=1000): 
+    def __init__(self, learning_rate=0.001, n_iters=1000, penalty=None):
+        self.penalty = penalty
         self.learning_rate = learning_rate 
         self.n_iters = n_iters 
         self.weights = None 
@@ -63,22 +99,33 @@ class LogisticRegression(BaseModel):
 
         self.weights = np.zeros(n_features) 
 
-        self.bias = 0 
+        self.bias = 0
+        self.losses = []
 
         for _ in range(self.n_iters): 
             A = self.feed_forward(X) 
-            self.losses.append(self.compute_loss(y, A))
+            loss = self.compute_loss(y, A)
             dz = A - y 
             
             # gradients 
             dw = (1 / n_samples) * np.dot(X.T, dz) 
             db = (1 / n_samples) * np.sum(dz) 
 
+            if self.penalty is not None:
+                loss += self.penalty(self.weights)
+                dw += self.penalty.grad(self.weights)
+            self.losses.append(loss)
+
             self.weights -= self.learning_rate * dw 
             self.bias -= self.learning_rate * db 
 
         return self 
 
+
+    def save_loss_video(self, path):
+        """Export this fitted model's loss history as an MP4."""
+        label = "Training log loss" if self.penalty is None else "Log loss + regularization penalty"
+        return save_loss_video(self.losses, path, ylabel=label)
 
     def predict(self, X): 
         threshold = 0.5 

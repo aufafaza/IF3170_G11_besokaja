@@ -34,12 +34,17 @@ class KNN(BaseModel):
         if self._X_train is None or self._y_train is None:
             raise RuntimeError("KNN must be fitted before calling predict")
 
+        if self.k <= 0:
+            raise ValueError("k must be > 0")
+
+        count = min(self.k, len(self._y_train))
         for sample in np.asarray(X):
             distances = np.power(
                 np.sum(np.abs(self._X_train - sample) ** self.p, axis=1),
                 1 / self.p,
             )
-            yield self._y_train[np.argsort(distances)[:self.k]]
+            indices = np.argpartition(distances, count - 1)[:count]
+            yield self._y_train[indices]
 
     def predict(self, X) -> np.ndarray:
         return np.asarray(
