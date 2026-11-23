@@ -136,7 +136,7 @@ def test_multiclass_and_multilabel_are_rejected(model_class):
         model_class().fit(X, y)
 
     multilabel = np.column_stack([y == 0, y == 1]).astype(int)
-    with pytest.raises(ValueError, match="multi-label"):
+    with pytest.raises(ValueError, match="Multi-label"):
         model_class().fit(X, multilabel)
 
 

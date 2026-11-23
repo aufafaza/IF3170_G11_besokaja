@@ -247,7 +247,7 @@ class KernelSVM(BaseModel):
         self._validate_hyperparameters()
         if self.n_iters is not None or self.learning_rate is not None:
             warnings.warn(
-                "KernelSVM ignores n_iters and learning_rate; use max_iter and tol",
+                "KernelSVM ignores n_iters and learning_rate, Use max_iter and tol",
                 FutureWarning,
                 stacklevel=2,
             )
@@ -279,7 +279,7 @@ class KernelSVM(BaseModel):
     def _validate_hyperparameters(self):
         if self.kernel not in _KERNELS:
             raise ValueError(
-                f"Unknown kernel {self.kernel!r}; expected one of {sorted(_KERNELS)}"
+                f"Unknown kernel {self.kernel!r}. Expected one of {sorted(_KERNELS)}"
             )
         if self.C is not None and self.C <= 0:
             raise ValueError("C must be positive, or None for a hard margin")
