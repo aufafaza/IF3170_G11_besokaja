@@ -1,8 +1,57 @@
-import cvxopt
+import warnings
+from collections import OrderedDict
+
 import matplotlib.pyplot as plt
 import numpy as np
+from sklearn.exceptions import ConvergenceWarning
 
 from ml_lib.model.base import BaseModel
+
+_KERNELS = {
+    "linear": "linear",
+    "poly": "poly",
+    "polynomial": "poly",
+    "rbf": "rbf",
+    "gaussian": "rbf",
+}
+_PREDICT_BATCH_SIZE = 1024
+
+
+def _encode_binary_labels(y):
+    """Return the two sorted classes and y encoded as -1/+1."""
+    y = np.asarray(y)
+    if y.ndim == 2 and y.shape[1] == 1:
+        y = y.ravel()
+    if y.ndim != 1:
+        raise ValueError("SVM supports one binary target. Multi-label y is not supported")
+
+    classes, encoded = np.unique(y, return_inverse=True)
+    if classes.size != 2:
+        raise ValueError(f"SVM requires exactly 2 classes, got {classes.size}")
+    return classes, 2.0 * encoded.ravel() - 1.0
+
+
+def _signed_labels(y, classes):
+    """Encode labels from an already fitted class pair as -1/+1."""
+    y = np.asarray(y)
+    if not np.isin(y, classes).all():
+        raise ValueError(f"y must only contain the fitted classes {classes.tolist()}")
+    return np.where(y == classes[1], 1.0, -1.0)
+
+
+def _prepare_training_data(X, y):
+    X = np.asarray(X, dtype=float)
+    if X.ndim != 2:
+        raise ValueError(f"X must be 2D, got shape {X.shape}")
+    if not np.isfinite(X).all():
+        raise ValueError("X contains NaN or infinity. Please impute missing values first")
+
+    classes, signed_y = _encode_binary_labels(y)
+    if X.shape[0] != signed_y.size:
+        raise ValueError(
+            f"X and y have inconsistent lengths: {X.shape[0]} != {signed_y.size}"
+        )
+    return X, classes, signed_y
 
 
 class LinearSVM(BaseModel):
@@ -13,9 +62,12 @@ class LinearSVM(BaseModel):
             min(w, b)[1/2 mag(w)^2 + C * {sum of max (0, 1 - y_i (wx_i + b)}]
             equation at rhs of plus sign is hinge loss function
             equation at lhs of plus sign is the minimization of w
+
+        learning_rate is scaled by 1 / (n_samples * max(C, 1)) because the hinge
+        term is a sum over all samples.
     '''
 
-    def __init__(self, C=1, kernel='linear', degree=3, n_iters=1000, learning_rate=0.001):
+    def __init__(self, C=1, kernel='linear', degree=3, n_iters=1000, learning_rate=0.5):
         # we can seed here
         self.w = None
         self.b = None
@@ -27,26 +79,26 @@ class LinearSVM(BaseModel):
         self.history = {}
 
 
-    def predict(self, X) -> np.ndarray:
+    def decision_function(self, X) -> np.ndarray:
         if self.w is None or self.b is None:
             raise RuntimeError("LinearSVM must be fitted before calling predict")
-        X = np.asarray(X, dtype=float)
-        m = X.shape[0]
+        return np.asarray(X, dtype=float) @ self.w + self.b
 
-        y_preds = np.zeros(m)
+    def predict(self, X) -> np.ndarray:
         # these will use the final gradient descended w and b resulting from fit.
-        for i in range(m):
-            y_preds[i] = np.dot(self.w, X[i]) + self.b
-        y_preds = np.sign(y_preds)
-
-        return y_preds
+        scores = self.decision_function(X)
+        return self.classes_[(scores > 0).astype(int)]
 
     def fit(self, X, y) -> BaseModel:
-        X = np.asarray(X, dtype=float)
-        y = np.asarray(y, dtype=float)
+        if self.kernel != "linear":
+            raise ValueError("LinearSVM only supports kernel='linear', use KernelSVM")
+        if self.C <= 0:
+            raise ValueError("C must be positive")
+
+        X, self.classes_, signed_y = _prepare_training_data(X, y)
         self.w = np.random.rand(X.shape[1])
         self.b = np.random.rand()
-        self.history, new_w, new_b = self._gradient_descent(X, y, self.w, self.b)
+        self.history, new_w, new_b = self._gradient_descent(X, signed_y, self.w, self.b)
 
         # update to the final w and b
         self.w, self.b = new_w, new_b
@@ -54,44 +106,32 @@ class LinearSVM(BaseModel):
         return self
 
     def calc_hinge_loss(self, X_i, y_i, w, b):
-        return max(0, 1 - y_i * (np.dot(w, X_i) + b))
+        """Hinge loss for one sample or a batch, with y encoded as -1/+1."""
+        return np.maximum(0, 1 - y_i * (X_i @ w + b))
 
     def calc_cost(self, X, y, w, b, C=1):
-        m = X.shape[0]
+        """Primal objective, with y encoded as -1/+1."""
         margin_cost = np.dot(w, w) / 2
-
-        sum = 0
-        for i in range(m):
-            sum += self.calc_hinge_loss(X[i], y[i], w, b)
-
-
-        sum *= C
-
-        return margin_cost + sum
+        return margin_cost + C * self.calc_hinge_loss(X, y, w, b).sum()
 
     def _calc_gradient(self, X, y, w, b):
-        m = X.shape[0]
+        active = y * (X @ w + b) < 1
+        y_active = y[active]
 
-        dj_dw = w.copy()
-        dj_db = 0
-
-        for i in range(m):
-            hinge_condition = (1 - y[i] * (np.dot(w, X[i]) + b)) > 0
-
-            if hinge_condition:
-                dj_dw -= self.C * y[i] * X[i]
-                dj_db += -self.C * y[i]
+        dj_dw = w - self.C * (y_active @ X[active])
+        dj_db = -self.C * y_active.sum()
 
         return dj_dw, dj_db
 
     def _gradient_descent(self, X, y, w, b):
         history = {0: self.calc_cost(X, y, w, b, self.C)}
         print(f"Iter\t0\tCost\t{history[0]}")
+        step_size = self.learning_rate / (X.shape[0] * max(self.C, 1))
 
         for iter in range(1, self.n_iters + 1):
             dj_dw, dj_db = self._calc_gradient(X, y, w, b)
-            w = w - self.learning_rate * dj_dw
-            b = b - self.learning_rate * dj_db
+            w = w - step_size * dj_dw
+            b = b - step_size * dj_db
 
             if iter % 100 == 0 or iter == self.n_iters:
                 cost = self.calc_cost(X, y, w, b, self.C)
@@ -134,13 +174,11 @@ class LinearSVM(BaseModel):
         plt.plot(xx, yyp, color='blue', linestyle='dotted')
 
         # hinge loss plot
-        n_examples = 50
-        t = np.zeros(n_examples)
-        loss = np.zeros(n_examples)
-
-        for i in range(n_examples):
-            t[i] = y[i] * (np.dot(self.w, X[i]) + self.b)
-            loss[i] = self.calc_hinge_loss(X[i], y[i], self.w, self.b)
+        n_examples = min(50, X.shape[0])
+        X_sample = X[:n_examples]
+        y_sample = _signed_labels(y[:n_examples], self.classes_)
+        t = y_sample * self.decision_function(X_sample)
+        loss = self.calc_hinge_loss(X_sample, y_sample, self.w, self.b)
         plt.figure(figsize=(4,3))
         plt.scatter(t, loss)
         plt.title("loss")
@@ -167,11 +205,25 @@ class LinearSVM(BaseModel):
 
 class KernelSVM(BaseModel):
     '''
-    SVM using kernels, i.e. rbf (gaussian) and polynomial
+    Binary soft-margin SVM trained in the dual with Sequential Minimal
+    Optimization (SMO).
 
-    class is seperated due to difference in mathematical computation
+    Kernels:
+        linear:            x.z
+        poly/polynomial:   (gamma * x.z + coef) ** degree
+        rbf/gaussian:      exp(-gamma * ||x - z||^2)
+
+    Working-set selection follows the second-order rule of Fan, Chen and Lin
+    (JMLR 2005). Source: https://jmlr.org/papers/v6/fan05a.html
+    Kernel rows are computed on demand and kept in an LRU cache.
+
+    C=None trains a hard-margin SVM. n_iters and learning_rate are accepted only
+    for compatibility with older notebook cells and have no effect.
     '''
-    def __init__(self, C=1, kernel='rbf', gamma=None, degree=3, n_iters=1000, learning_rate=0.001, coef=None):
+    def __init__(
+        self, C=1, kernel='rbf', gamma=None, degree=3, n_iters=None,
+        learning_rate=None, coef=None, tol=1e-3, max_iter=None, cache_size=2000,
+    ):
         # we can seed here
 
         # self.b = np.random.rand()
@@ -182,6 +234,9 @@ class KernelSVM(BaseModel):
         self.learning_rate = learning_rate
         self.gamma = gamma
         self.coef = coef
+        self.tol = tol
+        self.max_iter = max_iter
+        self.cache_size = cache_size
         # self.history = {}
         self.a: np.ndarray | None = None
         self.support_vectors: np.ndarray | None = None
@@ -189,105 +244,191 @@ class KernelSVM(BaseModel):
         self.intercept: float | None = None
 
     def fit(self, X, y) -> BaseModel:
-        X = np.asarray(X, dtype=float)
-        y = np.asarray(y, dtype=float)
-        # samples and features
-        m, n = np.shape(X)
-
-        self.gamma_ = 1 / n if self.gamma is None else self.gamma
-
-        # we want to initialize the equation of the kernel
-        kernel_function = self._init_kernel(
-            degree = self.degree,
-            gamma = self.gamma_,
-            coef = self.coef
-        )
-
-        # create the kernel matrix
-        kernel_matrix = np.zeros((m, m))
-        for i in range(m):
-            for j in range(m):
-                kernel_matrix[i, j] = kernel_function(X[i], X[j])
-
-        # quadratic optimization
-        P, q, A, b, G, h = self._init_quadratic_matrix(y, m, kernel_matrix)
-
-        minimization = cvxopt.solvers.qp(P, q, G, h, A, b)
-        if (
-            minimization['status'] != 'optimal'
-            or minimization['x'] is None
-            or minimization['y'] is None
-        ):
-            raise RuntimeError(
-                f"SVM optimization failed: {minimization['status']}"
+        self._validate_hyperparameters()
+        if self.n_iters is not None or self.learning_rate is not None:
+            warnings.warn(
+                "KernelSVM ignores n_iters and learning_rate; use max_iter and tol",
+                FutureWarning,
+                stacklevel=2,
             )
 
-        # langragian mult, usually denoted as alpha in equations
+        X, self.classes_, signed_y = _prepare_training_data(X, y)
+        # samples and features
+        _, n = X.shape
 
-        a = np.ravel(minimization['x'])
+        self.kernel_ = _KERNELS[self.kernel]
+        self.gamma_ = 1 / n if self.gamma is None else self.gamma
+        self.coef_value_ = 1.0 if self.coef is None else self.coef
+        C = np.inf if self.C is None else float(self.C)
+
+        # langragian mult, usually denoted as alpha in equations
+        a, gradient, self.n_iter_ = self._solve_smo(X, signed_y, C)
 
         # extract support vectors, i.e. the non-zero lagr mult
-        idx = a > 1e-7
+        idx = a > 0
         if not np.any(idx):
             raise RuntimeError("SVM optimization produced no support vectors")
 
-        support_a = a[idx]
-        support_vectors = X[idx]
-        support_vector_labels = y[idx]
-
-        self.a = support_a
-        self.support_vectors = support_vectors
-        self.support_vector_labels = support_vector_labels
-        # the multiplier of y.T @ alpha = 0 is the model's bias.
-        
-        self.intercept = float(minimization['y'][0])
+        self.a = a[idx]
+        self.support_vectors = X[idx]
+        self.support_vector_labels = signed_y[idx]
+        self.intercept = self._compute_intercept(a, gradient, signed_y, C)
+        self.objective_ = float(0.5 * (a @ gradient) - 0.5 * a.sum())
         return self
 
+    def _validate_hyperparameters(self):
+        if self.kernel not in _KERNELS:
+            raise ValueError(
+                f"Unknown kernel {self.kernel!r}; expected one of {sorted(_KERNELS)}"
+            )
+        if self.C is not None and self.C <= 0:
+            raise ValueError("C must be positive, or None for a hard margin")
+        if self.gamma is not None and self.gamma <= 0:
+            raise ValueError("gamma must be positive")
+        if self.degree < 1 or int(self.degree) != self.degree:
+            raise ValueError("degree must be a positive integer")
+        if self.tol <= 0:
+            raise ValueError("tol must be positive")
+        if self.max_iter is not None and self.max_iter < 1:
+            raise ValueError("max_iter must be positive or None")
+        if self.cache_size < 1:
+            raise ValueError("cache_size must be at least 1")
 
-    def _init_quadratic_matrix(self, y, n_samples, kernel_matrix):
-        P = cvxopt.matrix(np.outer(y, y) * kernel_matrix, tc='d')
-        q = cvxopt.matrix(np.ones(n_samples) * -1)
-        A = cvxopt.matrix(y, (1, n_samples), tc='d')
-        b = cvxopt.matrix(0, tc='d')
-        if not self.C:
-            G = cvxopt.matrix(np.identity(n_samples) * -1)
-            h = cvxopt.matrix(np.zeros(n_samples))
-        else:
-            G_max = np.identity(n_samples) * -1
-            G_min = np.identity(n_samples)
-            G = cvxopt.matrix(np.vstack((G_max, G_min)))
-            h_max = cvxopt.matrix(np.zeros(n_samples))
-            h_min = cvxopt.matrix(np.ones(n_samples) * self.C)
-            h = cvxopt.matrix(np.vstack((h_max, h_min)))
+    def _solve_smo(self, X, y, C):
+        """Minimize 1/2 a'Qa - e'a subject to y'a = 0 and 0 <= a <= C."""
+        m = y.size
+        a = np.zeros(m)
+        gradient = -np.ones(m)
+        kernel_row = self._kernel_row_function(X)
+        diagonal = self._kernel_diagonal(X)
+        limit = max(100_000, 100 * m) if self.max_iter is None else self.max_iter
+        min_curvature = 1e-12
+        bound_tol = 1e-12 * (C if np.isfinite(C) else 1.0)
 
-        return P, q, A, b, G, h
+        n_iter = 0
+        while True:
+            violation = -y * gradient
+            below_upper = a < C
+            above_lower = a > 0
+            up_idx = np.flatnonzero((below_upper & (y > 0)) | (above_lower & (y < 0)))
+            low_idx = np.flatnonzero((below_upper & (y < 0)) | (above_lower & (y > 0)))
+            if up_idx.size == 0 or low_idx.size == 0:
+                break
 
+            # first index: the maximal KKT violator
+            i = up_idx[np.argmax(violation[up_idx])]
+            max_violation = violation[i]
+            if max_violation - violation[low_idx].min() < self.tol:
+                break
+            if n_iter >= limit:
+                warnings.warn(
+                    f"SMO stopped after {n_iter} iterations before reaching tol",
+                    ConvergenceWarning,
+                    stacklevel=3,
+                )
+                break
 
-    def _init_kernel(self, degree, gamma, coef):
-        coef = 1.0 if coef is None else coef
-        # badly written code XD
-        if self.kernel == "rbf":
-            def g(x1, x2):
-                distance = np.sum((x1 - x2) ** 2, axis=-1)
-                return np.exp(-gamma * distance)
-            return g
-        # else: poly
-        def f(x1, x2):
-            return (np.sum(x1 * x2, axis=-1) + coef) ** degree
-        return f
+            # second index: the largest second-order objective decrease
+            K_i = kernel_row(i)
+            candidates = low_idx[violation[low_idx] < max_violation]
+            linear_term = max_violation - violation[candidates]
+            curvature = np.maximum(
+                diagonal[i] + diagonal[candidates] - 2 * K_i[candidates], min_curvature
+            )
+            j = candidates[np.argmax(linear_term * linear_term / curvature)]
+            K_j = kernel_row(j)
+
+            # analytic two-variable update, clipped to the box constraints
+            pair_curvature = max(diagonal[i] + diagonal[j] - 2 * K_i[j], min_curvature)
+            step = (max_violation - violation[j]) / pair_curvature
+            step = min(
+                step,
+                C - a[i] if y[i] > 0 else a[i],
+                a[j] if y[j] > 0 else C - a[j],
+            )
+            a[i] += y[i] * step
+            a[j] -= y[j] * step
+            for index in (i, j):
+                if a[index] <= bound_tol:
+                    a[index] = 0.0
+                elif np.isfinite(C) and a[index] >= C - bound_tol:
+                    a[index] = C
+
+            gradient += step * y * (K_i - K_j)
+            n_iter += 1
+
+        return a, gradient, n_iter
+
+    @staticmethod
+    def _compute_intercept(a, gradient, y, C):
+        y_gradient = y * gradient
+        free = (a > 0) & (a < C)
+        if free.any():
+            return float(-y_gradient[free].mean())
+
+        # without free support vectors, use the midpoint of the KKT interval
+        at_upper = a >= C
+        at_lower = a <= 0
+        upper_mask = (at_upper & (y < 0)) | (at_lower & (y > 0))
+        lower_mask = (at_upper & (y > 0)) | (at_lower & (y < 0))
+        upper = y_gradient[upper_mask].min() if upper_mask.any() else np.inf
+        lower = y_gradient[lower_mask].max() if lower_mask.any() else -np.inf
+        return float(-(upper + lower) / 2)
+
+    def _kernel_matrix(self, A, B):
+        dots = A @ B.T
+        if self.kernel_ == "linear":
+            return dots
+        if self.kernel_ == "poly":
+            return (self.gamma_ * dots + self.coef_value_) ** self.degree
+
+        squared = (A * A).sum(axis=1, keepdims=True) + (B * B).sum(axis=1) - 2 * dots
+        return np.exp(-self.gamma_ * np.maximum(squared, 0))
+
+    def _kernel_diagonal(self, X):
+        if self.kernel_ == "rbf":
+            return np.ones(X.shape[0])
+        squared_norms = np.einsum("ij,ij->i", X, X)
+        if self.kernel_ == "linear":
+            return squared_norms
+        return (self.gamma_ * squared_norms + self.coef_value_) ** self.degree
+
+    def _kernel_row_function(self, X):
+        cache = OrderedDict()
+        squared_norms = np.einsum("ij,ij->i", X, X)
+
+        def compute(i):
+            dots = X @ X[i]
+            if self.kernel_ == "linear":
+                return dots
+            if self.kernel_ == "poly":
+                return (self.gamma_ * dots + self.coef_value_) ** self.degree
+            squared = squared_norms + squared_norms[i] - 2 * dots
+            return np.exp(-self.gamma_ * np.maximum(squared, 0))
+
+        def row(i):
+            values = cache.get(i)
+            if values is None:
+                values = compute(i)
+                cache[i] = values
+                if len(cache) > self.cache_size:
+                    cache.popitem(last=False)
+            else:
+                cache.move_to_end(i)
+            return values
+
+        return row
 
     def decision_function(self, X):
         a = self.a
         support_vectors = self.support_vectors
         support_vector_labels = self.support_vector_labels
         intercept = self.intercept
-        gamma = getattr(self, "gamma_", None)
         if (
             a is None
             or support_vectors is None
             or support_vector_labels is None
             or intercept is None
-            or gamma is None
         ):
             raise RuntimeError("must be fitted before calling predict")
 
@@ -295,41 +436,38 @@ class KernelSVM(BaseModel):
         if X.ndim != 2 or X.shape[1] != support_vectors.shape[1]:
             raise ValueError("X must have the same number of features as the fitted model")
 
-        kernel_function = self._init_kernel(self.degree, gamma, self.coef)
-
-        kernel_values = kernel_function(X[:, None, :], support_vectors[None, :, :])
-        return kernel_values @ (a * support_vector_labels) + intercept
+        weights = a * support_vector_labels
+        scores = np.empty(X.shape[0])
+        for start in range(0, X.shape[0], _PREDICT_BATCH_SIZE):
+            stop = start + _PREDICT_BATCH_SIZE
+            scores[start:stop] = self._kernel_matrix(X[start:stop], support_vectors) @ weights
+        return scores + intercept
 
     def calc_cost(self, X, y):
         scores = self.decision_function(X)
-        y = np.asarray(y, dtype=float)
-        
-        if self.a is None: 
-            raise ValueError("a must not be none") 
 
-        if self.support_vectors is None: 
-            raise ValueError("support vectors cannot be empty") 
+        if self.a is None:
+            raise ValueError("a must not be none")
 
-        if y.shape != scores.shape or not np.all(np.isin(y, [-1, 1])):
-            raise ValueError("y must contain one label (-1 or 1) per sample")
+        if self.support_vectors is None:
+            raise ValueError("support vectors cannot be empty")
 
-        kernel_function = self._init_kernel(self.degree, self.gamma_, self.coef)
-
-        vectors = self.support_vectors
-
-        kernel_matrix = kernel_function(vectors[:, None, :], vectors[None, :, :])
+        signed_y = _signed_labels(y, self.classes_)
+        if signed_y.shape != scores.shape:
+            raise ValueError("y must contain one label per sample")
 
         weights = self.a * self.support_vector_labels
+        support_scores = self.decision_function(self.support_vectors) - self.intercept
+        margin_cost = 0.5 * (weights @ support_scores)
 
-        margin_cost = 0.5 * (weights @ kernel_matrix @ weights)
-
-        return float(margin_cost + (self.C or 0) * np.maximum(0, 1 - y * scores).sum())
+        return float(margin_cost + (self.C or 0) * np.maximum(0, 1 - signed_y * scores).sum())
 
     def predict(self, X) -> np.ndarray:
-        return np.sign(self.decision_function(X))
-    
+        scores = self.decision_function(X)
+        return self.classes_[(scores > 0).astype(int)]
 
-    # debug 
+
+    # debug
     def svm_plot(self, X, y, *, grid_size=150, show=True):
         X = np.asarray(X, dtype=float)
         y = np.asarray(y)
@@ -362,20 +500,3 @@ class KernelSVM(BaseModel):
         if show:
             plt.show()
         return ax
-
-
-#
-# if __name__ == "__main__":
-#     X, y = make_blobs(
-#         n_samples=100, centers=2, cluster_std=3.5, random_state=42
-#     )
-#     y = y * 2 - 1
-#     # print(X.shape)
-#     # print(y.shape)
-#     # print(X[:10])
-#     # print(y[:10])
-#     svm = KernelSVM(kernel='rbf') 
-#     svm.fit(X, y)
-#     svm.predict(X)
-#     svm.svm_plot(X, y)
-
