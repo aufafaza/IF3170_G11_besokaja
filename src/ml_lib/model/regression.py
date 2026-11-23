@@ -38,8 +38,8 @@ class elastic_net():
 
 class LogisticRegression(BaseModel): 
     def __init__(self, learning_rate = 0.001, n_iters=1000): 
-        self.lr = learning_rate 
-        self.n_iterations = n_iters 
+        self.learning_rate = learning_rate 
+        self.n_iters = n_iters 
         self.weights = None 
         self.bias = None 
         self.losses = [] 
@@ -65,7 +65,7 @@ class LogisticRegression(BaseModel):
 
         self.bias = 0 
 
-        for _ in range(self.n_iterations): 
+        for _ in range(self.n_iters): 
             A = self.feed_forward(X) 
             self.losses.append(self.compute_loss(y, A))
             dz = A - y 
@@ -74,8 +74,8 @@ class LogisticRegression(BaseModel):
             dw = (1 / n_samples) * np.dot(X.T, dz) 
             db = (1 / n_samples) * np.sum(dz) 
 
-            self.weights -= self.lr * dw 
-            self.bias -= self.lr * db 
+            self.weights -= self.learning_rate * dw 
+            self.bias -= self.learning_rate * db 
 
         return self 
 
