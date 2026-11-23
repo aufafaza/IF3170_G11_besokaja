@@ -1,7 +1,6 @@
 import numpy as np
 
 from ml_lib.model.base import BaseModel
-from ml_lib.utils.operation import minkowski_distance
 
 
 class KNN(BaseModel):
@@ -31,19 +30,19 @@ class KNN(BaseModel):
         labels, counts = np.unique(neighbors, return_counts=True)
         return labels[counts.argmax()]
 
-    def predict(self, X) -> np.ndarray:
-        """Predict labels for the samples in X."""
+    def neighbor_labels(self, X):
         if self._X_train is None or self._y_train is None:
             raise RuntimeError("KNN must be fitted before calling predict")
 
-        X = np.asarray(X)
-        y_pred = np.empty(X.shape[0], dtype=self._y_train.dtype)
+        for sample in np.asarray(X):
+            distances = np.power(
+                np.sum(np.abs(self._X_train - sample) ** self.p, axis=1),
+                1 / self.p,
+            )
+            yield self._y_train[np.argsort(distances)[:self.k]]
 
-        for i, sample in enumerate(X):
-            idx = np.argsort(
-                [minkowski_distance(sample, x, self.p) for x in self._X_train]
-            )[:self.k]
-            neighbors = self._y_train[idx]
-            y_pred[i] = self._vote(neighbors)
-
-        return y_pred
+    def predict(self, X) -> np.ndarray:
+        return np.asarray(
+            [self._vote(labels) for labels in self.neighbor_labels(X)],
+            dtype=self._y_train.dtype,
+        )
