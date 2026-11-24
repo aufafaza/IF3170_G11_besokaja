@@ -1,7 +1,6 @@
 import warnings
 from collections import OrderedDict
 
-import matplotlib.pyplot as plt
 import numpy as np
 from sklearn.exceptions import ConvergenceWarning
 
@@ -139,68 +138,6 @@ class LinearSVM(BaseModel):
                 history[iter] = cost
 
         return history, w, b
-
-    # debug
-    def svm_plot(self, X, y):
-        xlim = np.array([X[:, 0].min()-1, X[:, 0].max()+1])
-        ylim = np.array([X[:, 1].min()-1, X[:, 1].max()+1])
-
-        # original_y_plot
-        plt.figure(figsize=(4,3))
-        plt.scatter(X[:, 0], X[:, 1], c=y)
-
-        plt.title("y_true")
-        plt.xlim(xlim[0], xlim[1])
-        plt.ylim(ylim[0], ylim[1])
-
-        # y_preds
-        y_preds = self.predict(X)
-        plt.figure(figsize=(4,3))
-        plt.scatter(X[:, 0], X[:, 1], c=y_preds)
-
-        plt.title("y_preds")
-        plt.xlim(xlim[0], xlim[1])
-        plt.ylim(ylim[0], ylim[1])
-
-
-        # decision boundary plot
-        xx = xlim
-        yyn = (-1 -self.b - (self.w[0] * xx)) / self.w[1]  # <= -1 eq
-        yym = (-self.b - (self.w[0] * xx)) / self.w[1] # == 0 eq
-        yyp = (1 -self.b - (self.w[0] * xx)) / self.w[1] # >= 1 eq
-
-        plt.plot(xx, yyn, color='red', linestyle='dotted')
-        plt.plot(xx, yym, color='black')
-        plt.plot(xx, yyp, color='blue', linestyle='dotted')
-
-        # hinge loss plot
-        n_examples = min(50, X.shape[0])
-        X_sample = X[:n_examples]
-        y_sample = _signed_labels(y[:n_examples], self.classes_)
-        t = y_sample * self.decision_function(X_sample)
-        loss = self.calc_hinge_loss(X_sample, y_sample, self.w, self.b)
-        plt.figure(figsize=(4,3))
-        plt.scatter(t, loss)
-        plt.title("loss")
-
-
-        plt.show()
-
-    def plot_history(self, show=True):
-        if not self.history:
-            raise RuntimeError("LinearSVM must be fitted before plotting training history")
-
-        fig, ax = plt.subplots(figsize=(6, 4))
-        ax.plot(list(self.history), list(self.history.values()), marker='o')
-        ax.set_xlabel("Iteration")
-        ax.set_ylabel("Cost")
-        ax.set_title("SVM gradient descent history")
-        ax.grid(True, alpha=0.3)
-        fig.tight_layout()
-
-        if show:
-            plt.show()
-        return ax
 
 
 class KernelSVM(BaseModel):
@@ -465,38 +402,3 @@ class KernelSVM(BaseModel):
     def predict(self, X) -> np.ndarray:
         scores = self.decision_function(X)
         return self.classes_[(scores > 0).astype(int)]
-
-
-    # debug
-    def svm_plot(self, X, y, *, grid_size=150, show=True):
-        X = np.asarray(X, dtype=float)
-        y = np.asarray(y)
-        if X.ndim != 2 or X.shape[1] != 2:
-            raise ValueError("X must have exactly two features for plotting")
-        self.decision_function(X)
-        padding = 0.1 * np.maximum(np.ptp(X, axis=0), 1.0)
-        lower = X.min(axis=0) - padding
-        upper = X.max(axis=0) + padding
-        xx, yy = np.meshgrid(
-            np.linspace(lower[0], upper[0], grid_size),
-            np.linspace(lower[1], upper[1], grid_size),
-        )
-        grid = np.column_stack((xx.ravel(), yy.ravel()))
-        scores = self.decision_function(grid).reshape(xx.shape)
-
-        fig, ax = plt.subplots(figsize=(4, 3))
-        ax.scatter(X[:, 0], X[:, 1], c=y)
-        ax.contour(
-            xx, yy, scores, levels=[-1, 0, 1],
-            colors=['red', 'black', 'blue'],
-            linestyles=['dotted', 'solid', 'dotted'], linewidths=1.5,
-        )
-        ax.set_xlim(lower[0], upper[0])
-        ax.set_ylim(lower[1], upper[1])
-        ax.set_xlabel('Feature 1')
-        ax.set_ylabel('Feature 2')
-        ax.set_title(f"Kernel SVM · {self.kernel.upper()}")
-        fig.tight_layout()
-        if show:
-            plt.show()
-        return ax

@@ -1,7 +1,6 @@
 import warnings
 
 import cvxopt
-import matplotlib
 import numpy as np
 import pytest
 from sklearn.base import clone
@@ -11,8 +10,6 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 
 from ml_lib.model.svm import KernelSVM, LinearSVM
-
-matplotlib.use("Agg")
 
 KERNEL_CASES = [
     ("linear", {}, {}),
@@ -224,13 +221,3 @@ def test_linear_svm_rejects_nonlinear_kernel(blobs):
         LinearSVM(kernel="rbf").fit(X, y)
 
 
-@pytest.mark.filterwarnings("ignore:FigureCanvasAgg is non-interactive")
-def test_linear_svm_plot_handles_fewer_than_fifty_rows(blobs, capsys):
-    import matplotlib.pyplot as plt
-
-    X, y = blobs
-    np.random.seed(0)
-    model = LinearSVM(n_iters=10).fit(X[:20], y[:20])
-    model.svm_plot(X[:20], y[:20])
-    plt.close("all")
-    capsys.readouterr()
