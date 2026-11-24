@@ -13,14 +13,7 @@ from matplotlib.patches import Patch
 
 from ml_lib.model.dtl import DecisionTreeCART
 
-_CLASS_COLORS = (
-    "#2a78d6", "#eb6834", "#1baf7a", "#eda100",
-    "#e87ba4", "#008300", "#6250d6", "#e34948",
-)
-_NEUTRAL_COLOR = "#898781"
-_SURFACE = "#fcfcfb"
-_INK = "#0b0b0b"
-_SECONDARY_INK = "#52514e"
+from .style import CLASS_COLORS, INK, NEUTRAL_COLOR, SECONDARY_INK, SURFACE
 
 _BASE_FONT_SIZE = 8.5
 _MIN_READABLE_FONT_SIZE = 5.0
@@ -53,7 +46,7 @@ def plot_tree(tree, feature_names=None, max_depth=3, top_n=None, ax=None, show=T
 
     owns_figure = ax is None
     if owns_figure:
-        fig, ax = plt.subplots(figsize=(_MIN_FIGURE_WIDTH, _MIN_FIGURE_HEIGHT), facecolor=_SURFACE)
+        fig, ax = plt.subplots(figsize=(_MIN_FIGURE_WIDTH, _MIN_FIGURE_HEIGHT), facecolor=SURFACE)
     else:
         fig = ax.figure
 
@@ -217,13 +210,13 @@ def _node_label(tree, node, names, selected):
 
 def _node_color(tree, node):
     classes = getattr(tree, "classes_", None)
-    if classes is None or classes.size > len(_CLASS_COLORS):
-        return _NEUTRAL_COLOR
-    return _CLASS_COLORS[int(np.flatnonzero(classes == node.leaf_value)[0])]
+    if classes is None or classes.size > len(CLASS_COLORS):
+        return NEUTRAL_COLOR
+    return CLASS_COLORS[int(np.flatnonzero(classes == node.leaf_value)[0])]
 
 
 def _tint(color, strength=0.22):
-    surface = np.array(to_rgb(_SURFACE))
+    surface = np.array(to_rgb(SURFACE))
     return tuple(strength * np.array(to_rgb(color)) + (1 - strength) * surface)
 
 
@@ -235,7 +228,7 @@ def _draw_node(ax, tree, node, x, depth, names, selected):
     color = _node_color(tree, node)
     return ax.text(
         x, -depth, _node_label(tree, node, names, selected),
-        ha="center", va="center", color=_INK, fontsize=_BASE_FONT_SIZE, zorder=2,
+        ha="center", va="center", color=INK, fontsize=_BASE_FONT_SIZE, zorder=2,
         bbox={
             "boxstyle": f"round,pad={_BOX_PAD}",
             "facecolor": _tint(color),
@@ -293,27 +286,27 @@ def _draw_edges(ax, nodes, selected, font_size):
             child_x = positions[id(child)]
             ax.plot(
                 [x, child_x], [-depth, -depth - 1],
-                color=_NEUTRAL_COLOR, linewidth=1.0, zorder=1,
+                color=NEUTRAL_COLOR, linewidth=1.0, zorder=1,
             )
             ax.text(
                 (x + child_x) / 2, -depth - 0.5, answer,
-                ha="center", va="center", color=_SECONDARY_INK, fontsize=font_size * 0.9,
-                zorder=3, bbox={"facecolor": _SURFACE, "edgecolor": "none", "pad": 1},
+                ha="center", va="center", color=SECONDARY_INK, fontsize=font_size * 0.9,
+                zorder=3, bbox={"facecolor": SURFACE, "edgecolor": "none", "pad": 1},
             )
 
 
 def _legend_handles(tree, nodes, selected):
     handles = []
     classes = getattr(tree, "classes_", None)
-    if classes is not None and 2 <= classes.size <= len(_CLASS_COLORS):
+    if classes is not None and 2 <= classes.size <= len(CLASS_COLORS):
         handles = [
             Patch(facecolor=_tint(color), edgecolor=color, label=f"Class {label}")
-            for label, color in zip(classes, _CLASS_COLORS)
+            for label, color in zip(classes, CLASS_COLORS)
         ]
     if any(_is_collapsed(node, selected) for node, _, _ in nodes):
         handles.append(
             Patch(
-                facecolor=_SURFACE, edgecolor=_NEUTRAL_COLOR,
+                facecolor=SURFACE, edgecolor=NEUTRAL_COLOR,
                 linestyle="--", label="Hidden branches",
             )
         )
