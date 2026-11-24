@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import NamedTuple
 
-import matplotlib.pyplot as plt
 import numpy as np
 from sklearn.base import ClassifierMixin, RegressorMixin
 from sklearn.utils import RegressorTags, check_random_state
@@ -62,6 +61,11 @@ class DecisionTree(ClassifierMixin, BaseModel):
         self.root=None
 
     def fit(self, X, y) -> DecisionTree:
+        if hasattr(X, "columns"):
+            self.feature_names_in_ = np.asarray(X.columns, dtype=object)
+        elif hasattr(self, "feature_names_in_"):
+            del self.feature_names_in_
+
         self._encoder = TabularEncoder(self.categorical_features)
         X = np.asfortranarray(self._encoder.fit_transform(X))
         y = np.asarray(y)
@@ -350,50 +354,6 @@ class DecisionTree(ClassifierMixin, BaseModel):
             active = active[feature[node[active]] >= 0]
 
         return tree["value"][node]
-
-    def visualize(self, feature_names=None, max_depth=3, ax=None):
-        if self.root is None:
-            raise RuntimeError("DecisionTree must be fitted before calling visualize")
-        if max_depth is not None and max_depth < 0:
-            raise ValueError("max_depth must be nonnegative or None")
-        if feature_names is not None:
-            feature_names = list(feature_names)
-            if len(feature_names) != self.n_features_in_:
-                raise ValueError("Provide one feature name per training column")
-
-
-        if ax is None:
-            _, ax = plt.subplots(figsize=(14, 6))
-
-        def split_label(node, name):
-            if node.left_categories is None:
-                return f"{name} ≤ {node.threshold}"
-            categories = self._encoder.categories_[node.feature][node.left_categories]
-            shown = ", ".join(str(category) for category in categories[:3])
-            suffix = ", ..." if len(categories) > 3 else ""
-            return f"{name} in {{{shown}{suffix}}}"
-
-        def draw(node, x, depth, width, branch=""):
-            if node.is_leaf_node():
-                label = f"predict {node.value}"
-            else:
-                name = feature_names[node.feature] if feature_names is not None else f"X[{node.feature}]"
-                label = split_label(node, name)
-                if max_depth is None or depth < max_depth:
-                    for child, direction, answer in ((node.left, -1, "Yes"), (node.right, 1, "No")):
-                        child_x = x + direction * width / 4
-                        ax.plot([x, child_x], [-depth, -depth - 1], color="gray", zorder=1)
-                        draw(child, child_x, depth + 1, width / 2, answer + "\n")
-                else:
-                    label += "\n(children hidden)"
-            ax.text(x, -depth, f"{branch}{label}\nn = {node.n_samples}",
-                    ha="center", va="center", bbox={"boxstyle": "round", "facecolor": "white"})
-
-        draw(self.root, 0.5, 0, 1)
-        ax.set_xlim(0, 1)
-        ax.margins(y=0.15)
-        ax.set_axis_off()
-        return ax
 
 
 class DecisionTreeC45(DecisionTree):
