@@ -103,6 +103,7 @@ def test_classifier_supports_default_parameter_search_scoring(tree_class):
 def test_cart_interface_and_pruning(regression):
     from sklearn.base import is_regressor
     from sklearn.metrics import accuracy_score, r2_score
+
     from ml_lib.model.dtl import DecisionTreeCART
 
     X = np.arange(12).reshape(-1, 1)
@@ -131,6 +132,7 @@ def test_cart_interface_and_pruning(regression):
 
 def test_cart_mode_can_change_between_fits():
     from sklearn.base import is_regressor
+
     from ml_lib.model.dtl import DecisionTreeCART
 
     model = DecisionTreeCART().fit([[0], [1]], [0, 1])
