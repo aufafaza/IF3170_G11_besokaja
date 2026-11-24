@@ -1,6 +1,5 @@
 from abc import ABC, abstractmethod
 from numbers import Integral
-from pathlib import Path
 
 import numpy as np
 
@@ -80,36 +79,6 @@ class elastic_net(Penalty):
         return thresholded / (1 + step * self.alpha * (1 - self.l1_ratio))
 
 
-def save_loss_video(losses, path, *, ylabel="Training log loss"):
-    import matplotlib.pyplot as plt
-    from matplotlib.animation import FFMpegWriter, FuncAnimation
-
-    if len(losses) == 0:
-        raise ValueError("Fit the model first")
-
-    path = Path(path)
-    steps = np.arange(len(losses))
-    fig, ax = plt.subplots(figsize=(8, 4.5))
-    line, = ax.plot(steps, losses, marker=".", markevery=[-1])
-    ax.set(xlabel="Gradient updates completed", ylabel=ylabel,
-           title="Logistic regression training")
-    fig.tight_layout()
-
-    def update(end):
-        line.set_data(steps[:end], losses[:end])
-        return (line,)
-
-    frames = np.linspace(1, len(losses), min(150, len(losses)), dtype=int)
-    animation = FuncAnimation(fig, update, frames=frames, repeat=False)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        animation.save(path, writer=FFMpegWriter(fps=25, codec="libx264",
-                                                 extra_args=["-pix_fmt", "yuv420p"]))
-    finally:
-        plt.close(fig)
-    return path
-
-
 class LogisticRegression(BaseModel):
     """
     Binary logistic regression trained with proximal gradient descent.
@@ -118,16 +87,23 @@ class LogisticRegression(BaseModel):
         applied to the weights only, never to the bias
     tol: float or None
         stop when the objective changes by at most tol, None runs all n_iters
+    track_parameters: bool
+        store [bias, weights...] in parameter_history_, one row for the
+        initial parameters and one after each gradient update
     """
 
-    def __init__(self, learning_rate=0.001, n_iters=1000, penalty=None, tol=None):
+    def __init__(
+        self, learning_rate=0.001, n_iters=1000, penalty=None, tol=None, track_parameters=False
+    ):
         self.penalty = penalty
         self.learning_rate = learning_rate
         self.n_iters = n_iters
         self.tol = tol
+        self.track_parameters = track_parameters
         self.weights = None
         self.bias = None
         self.losses = []
+        self.parameter_history_ = None
         self.sigmoid = Sigmoid()
 
     def _validate_hyperparameters(self):
@@ -164,6 +140,7 @@ class LogisticRegression(BaseModel):
         bias = 0.0
         self.losses = []
         self.n_iter_ = 0
+        history = [np.r_[bias, weights]] if self.track_parameters else None
 
         for _ in range(self.n_iters):
             # log loss is log(1 + exp(-sign * score))
@@ -187,9 +164,12 @@ class LogisticRegression(BaseModel):
             weights = self._update_weights(weights, dw)
             bias -= self.learning_rate * db
             self.n_iter_ += 1
+            if history is not None:
+                history.append(np.r_[bias, weights])
 
         self.weights = weights
         self.bias = bias
+        self.parameter_history_ = None if history is None else np.array(history)
         return self
 
     def _prepare_training_data(self, X, y):
@@ -218,11 +198,6 @@ class LogisticRegression(BaseModel):
         if self.penalty is None:
             return step
         return self.penalty.prox(step, self.learning_rate)
-
-    def save_loss_video(self, path):
-        """Export this fitted model's loss history as an MP4."""
-        label = "Training log loss" if self.penalty is None else "Log loss + regularization penalty"
-        return save_loss_video(self.losses, path, ylabel=label)
 
     def predict(self, X):
         # sigmoid(score) > 0.5 is the same as score > 0

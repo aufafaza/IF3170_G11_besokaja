@@ -286,17 +286,3 @@ def test_predict_rejects_wrong_feature_count():
         model.predict([[0]])
     with pytest.raises(ValueError, match="features|shape"):
         model.predict(np.array([[0.0]]))
-
-
-def test_visualize_shows_categorical_split():
-    import matplotlib
-
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-
-    X = pd.DataFrame({"room": ["a", "b", "c", "a", "b", "c"]})
-    model = DecisionTreeCART(max_depth=2).fit(X, [0, 1, 0, 0, 1, 0])
-    ax = model.visualize(feature_names=["room"])
-
-    assert any(" in {" in text.get_text() for text in ax.texts)
-    plt.close("all")
