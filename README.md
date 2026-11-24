@@ -30,31 +30,57 @@ python -m pip install -e .
 
 3. Buka Notebook, lalu jalankan pada virtual environment yang sudah dibuat.
 
-## Penjelasan 
-
-Work in progress...
-
 ## Pembagian Kerja
 
 ### 13524027 | Aufa Rienaldifaza Ahmad 
 
-* Note.
+* Implementasi kNN 
+* Implementasi logistic regression
+* Implementasi ID3
+* Implementasi C45
+* Implementasi CART 
+* Implementasi linear SVM 
+* Implementasi non-linear kernel SVM
+* Implementasi visualisasi log-loss logistic regression 
+* Implementasi visualisasi hasil tree DTL 
+* Implementasi visualisasi SVM 
+* Model training dan feature engineering pada notebook 
+
 
 ### 13524045 | Ahmad Zaky Robbani      
 
-* Note.
+* Implementasi attribute construction
+* Implementasi feature scaling
+* Implementasi encoding
+* Menyusun laporan dengan docs
+
 
 ### 13524075 | Hakam Avicena Mustain   
 
-* Note.
+* Membuat data cleaning 
+* Membuat data preparation
+* Membuat PCA
+* Menulis laporan dengan docs
 
 ### 13524087 | Muhammad Fakhry Zaki    
 
-* Note.
+* Membuat fungsi perhitungan model
+* Membandingkan model terbaik
+* Membandingkan model scratch dengan scikit
+* Melakukan hyperparameter tuning
+* Membuat save/load model dan submission
+* Membuat error analysis
+
 
 ### 13524099 | Muhammad Akmal          
 
-* Note.
+* Implementasi base model 
+* Implementasi Discrete Naive Bayes 
+* Implementasi Gaussian Naive Bayes 
+* Implementasi Mixed Naive Bayes
+* Refaktorisasi dan optimisasi semua model 
+* Implementasi visualisasi graf Naive Bayes 
+* Menulis laporan dengan $\LaTeX{}$
 
 ## Kredit
 
